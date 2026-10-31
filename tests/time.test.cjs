@@ -1,0 +1,56 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { parseTimestamp, timestampValue, detectUnit, parseDateTime, parseTimeInput, describeTime, shiftTime, timeBoundary, describeDifference } = require('../dist-electron/shared/time.js')
+
+test('timestamps preserve nanosecond precision across units and negative fractions', () => {
+  for (const [value, unit] of [['1793419200.123456789', 'seconds'], ['1793419200123.456789', 'milliseconds'], ['1793419200123456.789', 'microseconds'], ['1793419200123456789', 'nanoseconds']]) {
+    const parsed = parseTimestamp(value, unit)
+    assert.equal(parsed.instant.toString(), '2026-10-31T04:00:00.123456789Z')
+    assert.equal(timestampValue(parsed.instant, unit), value)
+  }
+  assert.equal(parseTimestamp('-0.000000001', 'seconds').instant.epochNanoseconds, -1n)
+  assert.equal(timestampValue(parseTimestamp('-1', 'nanoseconds').instant, 'milliseconds'), '-0.000001')
+  assert.throws(() => parseTimestamp('1.0000000001', 'seconds'), /精度/)
+  assert.throws(() => parseTimestamp('9999999999999999999999999999999', 'nanoseconds'), /范围/)
+  assert.throws(() => parseTimestamp('1e3', 'seconds'), /有效数字/)
+})
+test('auto units and epoch zero are deterministic', () => {
+  for (const [value, unit] of [['0', 'seconds'], ['1793419200', 'seconds'], ['1793419200000', 'milliseconds'], ['1793419200000000', 'microseconds'], ['1793419200000000000', 'nanoseconds']]) assert.equal(detectUnit(value), unit)
+  assert.equal(parseTimeInput('0', 'Asia/Shanghai').toString(), '1970-01-01T00:00:00Z')
+  assert.equal(describeTime(parseTimestamp('0').instant, 'Asia/Shanghai').zoned, '1970-01-01 08:00:00 +08:00')
+})
+test('strict dates, offset inputs, leap days and DST disambiguation', () => {
+  assert.equal(parseDateTime('2026-10-31 12:00:00', 'Asia/Shanghai').toString(), '2026-10-31T04:00:00Z')
+  assert.equal(parseDateTime('2026-10-31T12:00:00+08:00', 'America/New_York').toString(), '2026-10-31T04:00:00Z')
+  assert.equal(parseDateTime('2024-02-29T00:00:00', 'UTC').toString(), '2024-02-29T00:00:00Z')
+  assert.throws(() => parseDateTime('2026-02-29T12:00:00', 'UTC'))
+  assert.throws(() => parseDateTime('2026-03-08T02:30:00', 'America/New_York'))
+  assert.throws(() => parseDateTime('2026-11-01T01:30:00', 'America/New_York'))
+  const earlier = parseDateTime('2026-11-01T01:30:00', 'America/New_York', 'earlier')
+  const later = parseDateTime('2026-11-01T01:30:00', 'America/New_York', 'later')
+  assert.equal(later.epochNanoseconds - earlier.epochNanoseconds, 3600000000000n)
+})
+test('calendar day and elapsed hour arithmetic differ across DST, and month ends constrain', () => {
+  const before = parseDateTime('2026-03-07T12:00:00', 'America/New_York')
+  assert.equal(shiftTime(before, 'America/New_York', 1, 'days').epochNanoseconds - before.epochNanoseconds, 23n * 3600000000000n)
+  assert.equal(shiftTime(before, 'America/New_York', 24, 'hours').epochNanoseconds - before.epochNanoseconds, 24n * 3600000000000n)
+  assert.equal(shiftTime(parseDateTime('2026-01-31T12:00:00', 'UTC'), 'UTC', 1, 'months').toString(), '2026-02-28T12:00:00Z')
+  assert.throws(() => shiftTime(before, 'UTC', 1.5, 'days'), /整数/)
+})
+test('time boundaries follow the selected zone, use Monday and include final nanosecond', () => {
+  const value = parseDateTime('2026-10-31T12:00:00', 'Asia/Shanghai')
+  assert.equal(timeBoundary(value, 'Asia/Shanghai', 'day-start').toString(), '2026-10-30T16:00:00Z')
+  assert.equal(timeBoundary(value, 'Asia/Shanghai', 'week-start').toString(), '2026-10-25T16:00:00Z')
+  assert.equal(timeBoundary(value, 'Asia/Shanghai', 'month-end').toString(), '2026-10-31T15:59:59.999999999Z')
+})
+test('signed durations retain fractional seconds and compute non-decimal units correctly', () => {
+  const start = parseTimestamp('0').instant, end = parseTimestamp('3661.001000001', 'seconds').instant
+  const result = describeDifference(start, end)
+  assert.equal(result.seconds, '3661.001000001')
+  assert.equal(result.milliseconds, '3661001.000001')
+  assert.equal(result.nanoseconds, '3661001000001')
+  assert.match(result.human, /1 小时 1 分 1 秒 1 毫秒 1 纳秒/)
+  assert.equal(describeDifference(end, start).seconds, '-3661.001000001')
+  assert.equal(describeDifference(start, parseTimestamp('3600').instant).days, '0.041666666')
+  assert.equal(describeDifference(start, parseTimestamp('5400').instant).hours, '1.5')
+})

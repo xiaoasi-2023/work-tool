@@ -1,0 +1,115 @@
+.json-workbench {
+  --json-string: #267343;
+  --json-number: #8950b0;
+  --json-key: #315aa6;
+  --json-bool: #a55d20;
+  --json-remove: #fceceb;
+  --json-add: #e7f5ed;
+  display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0;
+}
+[data-theme='dark'] .json-workbench { --json-string: #8bcca7; --json-number: #ceb0ee; --json-key: #9dbaff; --json-bool: #e5b27a; --json-remove: #452a2d; --json-add: #253e31; }
+.json-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-shrink: 0; }
+.json-heading h1 { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 650; }
+.json-heading h1 svg { color: var(--accent); }
+.json-view-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); }
+.json-view-tabs button { display: flex; align-items: center; gap: 6px; height: 36px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 0 13px; font-size: 13px; }
+.json-view-tabs button.selected { color: var(--accent); border-bottom-color: var(--accent); }
+.json-view-tabs button:hover { background: var(--hover); }
+.json-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 0; border-block: 1px solid var(--line); flex-shrink: 0; }
+.json-toolbar .el-button { height: 32px; padding: 6px 10px; font-size: 12px; }
+.json-toolbar .icon-button { width: 30px; height: 30px; flex: 0 0 30px; }
+.json-toolbar .bordered { border-radius: 5px; }
+.json-toolbar-divider { height: 18px; border-left: 1px solid var(--line); margin: 0 4px; }
+.json-toolbar .json-convert { width: 90px; }
+.json-toolbar .el-select__wrapper { min-height: 30px; font-size: 12px; }
+.json-options { display: flex; align-items: center; flex-wrap: wrap; column-gap: 18px; row-gap: 0; min-height: 50px; padding: 6px 0; flex-shrink: 0; }
+.json-indent-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.json-indent-label .el-select { width: 90px; }
+.json-indent-label .el-select__wrapper { min-height: 30px; font-size: 12px; }
+.json-options .el-checkbox { margin: 0; height: 30px; }
+.json-options .el-checkbox__label { font-size: 12px; padding-left: 6px; }
+.json-local-label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.json-failure { margin: 0 0 10px; flex-shrink: 0; max-height: 90px; overflow: auto; }
+.json-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; flex: 1; min-height: 0; min-width: 0; }
+.json-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.json-pane > header { display: flex; align-items: center; gap: 8px; height: 42px; flex-shrink: 0; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.json-pane > header strong { font-weight: 550; white-space: nowrap; }
+.json-pane > header .muted { font-size: 10px; white-space: nowrap; }
+.json-pane > header .icon-button { width: 26px; height: 28px; flex-shrink: 0; }
+.json-code-editor { flex: 1; min-height: 0; min-width: 0; overflow: hidden; font-size: 13px; }
+.json-workbench .cm-editor { font-size: 13px; }
+.json-workbench .cm-gutterElement { font-size: 11px; }
+.json-workbench .cm-search { padding: 7px; font-size: 12px; }
+.json-workbench .cm-textfield { max-width: 140px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 3px 5px; }
+.json-workbench .cm-button { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 3px; font-size: 11px; padding: 2px 6px; }
+.json-workbench .cm-panel label { font-size: 11px; white-space: nowrap; }
+.json-workbench .cm-placeholder { color: var(--subtle); }
+.json-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 28px; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.json-file-input { display: none; }
+.json-tree { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.json-tree-toolbar { display: flex; align-items: center; gap: 3px; padding: 4px 10px; border-bottom: 1px solid var(--line); font-size: 11px; flex-shrink: 0; }
+.json-tree-toolbar .icon-button { width: 26px; height: 26px; }
+.json-tree-scroll { flex: 1; min-height: 0; overflow: auto; padding: 6px 0; }
+.json-tree-row { display: flex; align-items: center; gap: 5px; min-height: 33px; padding-right: 6px; min-width: 280px; font-size: 12px; }
+.json-tree-row:hover { background: var(--hover); }
+.json-tree-row .tree-chevron { width: 20px; min-width: 20px; height: 24px; padding: 0; flex-shrink: 0; }
+.tree-key { color: var(--json-key); flex-shrink: 0; max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-colon { color: var(--subtle); }
+.tree-value { min-width: 25px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.json-string { color: var(--json-string); }
+.json-number { color: var(--json-number); }
+.json-boolean { color: var(--json-bool); }
+.json-null { color: var(--subtle); font-style: italic; }
+.tree-actions { display: flex; margin-left: auto; flex-shrink: 0; gap: 0; padding-left: 4px; }
+.tree-actions .icon-button { width: 24px; height: 26px; }
+.json-tree-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 100px; flex: 1; }
+.json-tree-error { padding: 16px; font-size: 12px; color: var(--el-color-danger); overflow-wrap: anywhere; }
+.tree-more { padding: 12px 18px; font-size: 12px; }
+.json-field-form { display: flex; flex-direction: column; gap: 16px; }
+.json-field-form > label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 12px; }
+.json-field-form textarea { font-family: 'Cascadia Code', Consolas, monospace; }
+.json-field-form .el-alert { margin: 0; }
+.json-comparison { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.json-compare-status { display: flex; align-items: center; gap: 12px; padding: 5px 12px; min-height: 36px; border-bottom: 1px solid var(--line); font-size: 12px; flex-shrink: 0; }
+.json-compare-status .icon-button { width: 25px; height: 25px; }
+.diff-key { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; }
+.diff-key::before { content: ''; width: 8px; height: 8px; border-radius: 2px; border: 1px solid var(--line); }
+.diff-key.removed::before { background: var(--json-remove); }
+.diff-key.added::before { background: var(--json-add); }
+.json-compare-labels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); font-size: 12px; flex-shrink: 0; }
+.json-compare-labels > div { display: flex; align-items: center; gap: 2px; min-width: 0; padding: 5px 8px 5px 12px; }
+.json-compare-labels > div + div { border-left: 1px solid var(--line); }
+.json-compare-labels > div > span:first-child { white-space: nowrap; }
+.json-compare-labels .icon-button { width: 25px; height: 25px; flex-shrink: 0; }
+.json-merge-host { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.json-merge-host .cm-mergeView { height: 100%; }
+.json-merge-host .cm-mergeViewEditors { min-height: 100%; }
+.json-merge-host .cm-mergeViewEditor { min-width: 0; }
+.json-merge-host .cm-mergeViewEditor + .cm-mergeViewEditor { border-left: 1px solid var(--line); }
+.json-workbench .cm-merge-a .cm-changedLine { background: var(--json-remove); }
+.json-workbench .cm-merge-b .cm-changedLine { background: var(--json-add); }
+.json-workbench .cm-insertedLine, .json-workbench .cm-deletedLine { text-decoration: none; }
+@media (max-width: 900px) {
+  .json-toolbar .toolbar-spacer { display: none; }
+  .json-pane > header { gap: 5px; padding-inline: 8px; }
+  .json-pane > header .muted { display: none; }
+}
+@media (max-width: 600px) {
+  .json-heading { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .json-heading h1 { font-size: 18px; }
+  .json-view-tabs { margin-left: auto; }
+  .json-view-tabs button { height: 32px; font-size: 12px; padding: 0 9px; }
+  .json-toolbar { gap: 3px; padding-block: 7px; }
+  .json-toolbar .icon-button { width: 28px; height: 28px; flex-basis: 28px; }
+  .json-toolbar-divider { margin: 0 1px; }
+  .json-options { column-gap: 12px; padding-block: 4px; min-height: 42px; }
+  .json-options .json-local-label { display: none; }
+  .json-panels { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .json-pane > header { height: 34px; }
+  .json-status { font-size: 9px; min-height: 24px; gap: 5px; }
+  .json-comparison .diff-key { display: none; }
+  .json-compare-status { gap: 7px; padding-inline: 8px; }
+  .json-workbench .cm-editor { font-size: 12px; }
+  .json-compare-labels > div { padding: 6px; flex-wrap: wrap; font-size: 11px; }
+  .json-compare-labels > div > span:first-child { flex-basis: 100%; margin-bottom: 3px; }
+}

@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { PanelsTopLeft, LayoutGrid, Star, History, Settings2, Search, ArrowUpRight, ChevronRight, Wrench, Monitor, FolderGit2, Activity, X, ArrowRight, Plus, FolderOpen, CheckCircle2, SlidersHorizontal, TextCursorInput } from 'lucide-vue-next'
 import { useApp } from './store'
 import { api } from './api'
 import { tools } from './tools'
-import GitTool from './components/GitTool.vue'
-import DataTools from './components/DataTools.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
 import type { ToolId } from '../shared/types'
+
+const GitTool = defineAsyncComponent(() => import('./components/GitTool.vue'))
+const DataTools = defineAsyncComponent(() => import('./components/DataTools.vue'))
+const JsonWorkbench = defineAsyncComponent(() => import('./components/JsonWorkbench.vue'))
+const TimeWorkbench = defineAsyncComponent(() => import('./components/TimeWorkbench.vue'))
+const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'))
 
 const app = useApp()
 const search = ref('')
@@ -81,7 +84,9 @@ onMounted(load)
           </div>
         </template>
         <GitTool v-else-if="app.page === 'git'" />
-        <DataTools v-else-if="['json', 'text', 'time'].includes(app.page)" :key="app.page" :tool="app.page as 'json' | 'text' | 'time'" />
+        <JsonWorkbench v-else-if="app.page === 'json'" />
+        <TimeWorkbench v-else-if="app.page === 'time'" />
+        <DataTools v-else-if="app.page === 'text'" :key="app.page" :tool="app.page" />
         <SettingsPanel v-else-if="app.page === 'settings'" />
         <template v-else-if="app.page === 'history'"><div class="page-heading"><div><div class="eyebrow">WORKSPACE / ACTIVITY</div><h1>操作记录<span class="title-tag">{{ app.state?.history.length || 0 }}</span></h1><p>最近 100 条 Git 操作记录</p></div><el-button @click="app.reload()">刷新</el-button></div><el-table :data="app.state?.history || []" empty-text="暂无操作记录"><el-table-column label="时间" width="180"><template #default="{row}">{{ new Date(row.time).toLocaleString('zh-CN') }}</template></el-table-column><el-table-column prop="project" label="项目" width="150" /><el-table-column prop="action" label="操作" width="130" /><el-table-column prop="detail" label="详情" min-width="240" /><el-table-column label="结果" width="90"><template #default="{row}"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template></el-table-column></el-table></template>
       </main>

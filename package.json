@@ -14,9 +14,21 @@
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --win nsis --x64",
-    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs"
+    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs tests/json.test.cjs tests/time.test.cjs",
+    "test:json": "tsc -p tsconfig.electron.json && node --test tests/json.test.cjs",
+    "test:time": "tsc -p tsconfig.electron.json && node --test tests/time.test.cjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/merge": "^6.12.3",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@js-temporal/polyfill": "^0.5.1",
+    "@lezer/highlight": "^1.2.5",
     "element-plus": "^2.11.5",
     "lossless-json": "^4.3.3",
     "lucide-vue-next": "^0.468.0",

@@ -16,7 +16,7 @@ const text = {
   timestamp: 'Unix \u65f6\u95f4\u6233', convert: '\u8f6c\u6362', settings: '\u8bbe\u7f6e', save: '\u4fdd\u5b58\u8bbe\u7f6e', dark: '\u6df1\u8272', light: '\u6d45\u8272',
   delete: '\u5220\u9664\u5206\u652f', confirmDelete: '\u5220\u9664 1 \u4e2a\u5206\u652f', completed: '\u5b8c\u6210'
 }
-async function waitText(page, selector, expected) { await page.waitForFunction(({selector, expected}) => document.querySelector(selector)?.value.includes(expected), {selector,expected}) }
+async function waitText(page, selector, expected) { await page.waitForFunction(({selector, expected}) => { const node = document.querySelector(selector); return (node?.value ?? node?.textContent ?? '').includes(expected) }, {selector,expected}) }
 async function main() {
   await fs.mkdir(output, { recursive: true })
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'workbench-ui-'))
@@ -43,7 +43,7 @@ async function main() {
     await page.locator('.tool-title').filter({ hasText: text.json }).click()
     await page.getByRole('textbox', { name: text.jsonInput, exact: true }).fill('{"big":90071992547409931234,"name":"\\u4e2d\\u6587"}')
     await page.getByRole('button', { name: text.format, exact: true }).click()
-    await waitText(page, 'textarea[aria-label="' + text.result + '"]', '90071992547409931234')
+    await waitText(page, '.cm-content[aria-label="' + text.result + '"]', '90071992547409931234')
     await page.screenshot({ path: path.join(output, 'desktop-json.png'), fullPage: true })
     await page.getByRole('textbox', { name: text.jsonInput, exact: true }).fill('{broken')
     await page.getByRole('button', { name: text.format, exact: true }).click(); await page.locator('.el-alert--error').waitFor()

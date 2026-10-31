@@ -50,10 +50,89 @@ test('detects nested Chinese paths, uncommitted files and branch protections', a
 test('removes merged local and remote branches, preserves main', async t => {
   const { repo, remote } = await fixture(t)
   await git(repo, 'branch', 'ai/merged'); await git(repo, 'push', 'origin', 'ai/merged')
+  await git(repo, 'config', 'branch.ai/merged.description', 'obsolete branch')
   const result = await service.delete(repo, await request(repo, ['refs/heads/ai/merged', 'refs/remotes/origin/ai/merged']))
   assert.deepEqual(result.map(r => r.success), [true, true])
   assert.equal(await git(remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/ai/merged'), '')
   assert.notEqual(await git(repo, 'rev-parse', 'refs/heads/main'), '')
+  await assert.rejects(() => git(repo, 'config', '--get', 'branch.ai/merged.description'))
+})
+
+test('atomic local deletion preserves commits changed after the final hash check', async t => {
+  const { repo } = await fixture(t)
+  const ref = 'refs/heads/ai/raced-local'
+  await git(repo, 'switch', '-c', 'ai/raced-local')
+  await fs.writeFile(path.join(repo, 'unique.txt'), 'unmerged')
+  await git(repo, 'add', '.'); await git(repo, 'commit', '-m', 'unique commit')
+  const changed = await git(repo, 'rev-parse', 'HEAD')
+  await git(repo, 'switch', 'main')
+  for (const force of [false, true]) {
+    await git(repo, 'branch', '-f', 'ai/raced-local', 'main')
+    const req = await request(repo, [ref], force)
+    const racing = new GitService(() => settings)
+    const run = racing.run.bind(racing)
+    let injected = false
+    racing.run = async (cwd, args) => {
+      if (args[0] === 'update-ref' && args.includes('-d')) {
+        await git(repo, 'update-ref', ref, changed)
+        injected = true
+      }
+      return run(cwd, args)
+    }
+    const result = await racing.delete(repo, req)
+    assert.equal(injected, true)
+    assert.equal(result[0].success, false)
+    assert.equal(await git(repo, 'rev-parse', ref), changed)
+  }
+})
+
+test('local deletion rechecks worktree occupancy after inspecting the repository', async t => {
+  const { repo, temp } = await fixture(t)
+  const ref = 'refs/heads/ai/late-worktree'
+  await git(repo, 'branch', 'ai/late-worktree')
+  const req = await request(repo, [ref], true)
+  const racing = new GitService(() => settings)
+  const run = racing.run.bind(racing)
+  let reads = 0
+  racing.run = async (cwd, args) => {
+    if (args[0] === 'worktree' && args[1] === 'list' && ++reads === 2) {
+      await git(repo, 'worktree', 'add', path.join(temp, 'late-worktree'), 'ai/late-worktree')
+    }
+    return run(cwd, args)
+  }
+  const result = await racing.delete(repo, req)
+  assert.equal(result[0].success, false)
+  assert.match(result[0].message, /工作区/)
+  assert.notEqual(await git(repo, 'rev-parse', ref), '')
+})
+
+test('batched divergence matches Git counts and supports older Git', async t => {
+  const { repo } = await fixture(t)
+  await git(repo, 'switch', '-c', 'feature')
+  await fs.writeFile(path.join(repo, 'feature.txt'), 'feature')
+  await git(repo, 'add', '.'); await git(repo, 'commit', '-m', 'feature')
+  await git(repo, 'switch', 'main')
+  await fs.writeFile(path.join(repo, 'main.txt'), 'main')
+  await git(repo, 'add', '.'); await git(repo, 'commit', '-m', 'main advances')
+  const hash = await git(repo, 'rev-parse', 'feature')
+  for (let i = 0; i < 12; i++) await git(repo, 'branch', `feature-copy-${i}`, hash)
+  const baseHash = await git(repo, 'rev-parse', 'main')
+  const expected = (await git(repo, 'rev-list', '--left-right', '--count', `${baseHash}...${hash}`)).split(/\s+/).map(Number)
+  for (const legacy of [false, true]) {
+    const reading = new GitService(() => settings)
+    const run = reading.run.bind(reading)
+    let walks = 0
+    reading.run = async (cwd, args) => {
+      if (legacy && args.some(arg => arg.includes('%(ahead-behind:'))) throw new Error('fatal: unknown field name: ahead-behind')
+      if (args[0] === 'rev-list') walks++
+      return run(cwd, args)
+    }
+    const detail = await reading.inspect(repo)
+    for (const branch of detail.branches.filter(b => b.hash === hash)) {
+      assert.equal(branch.behind, expected[0]); assert.equal(branch.ahead, expected[1]); assert.equal(branch.merged, false)
+    }
+    assert.equal(walks, legacy ? 2 : 0)
+  }
 })
 test('unmerged commits require force and stale local snapshots are rejected', async t => {
   const { repo } = await fixture(t)

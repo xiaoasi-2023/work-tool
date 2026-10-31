@@ -39,7 +39,8 @@ export class GitService {
     const defaultRefs = records.filter(fields => fields[6]).map(fields => fields[6])
     const baseRef = chosenBase && refs.includes(chosenBase) ? chosenBase :
       ['refs/heads/main', 'refs/heads/master', ...defaultRefs, 'refs/heads/develop', `refs/heads/${head}`].find(ref => refs.includes(ref)) || refs[0] || ''
-    const merged = new Set(baseRef ? (await this.run(directory, ['for-each-ref', `--merged=${baseRef}`, '--format=%(refname)', 'refs/heads/', 'refs/remotes/'])).split('\n') : [])
+    const baseHash = records.find(fields => fields[0] === baseRef)?.[1] || ''
+    const merged = new Set(baseHash ? (await this.run(directory, ['for-each-ref', `--merged=${baseHash}`, '--format=%(refname)', 'refs/heads/', 'refs/remotes/'])).split('\n') : [])
     const branches: Branch[] = []
     for (const fields of records) {
       const [ref, hash, subject, author, date, upstream, symref] = fields
@@ -56,15 +57,40 @@ export class GitService {
       branches.push({ ref, hash, name, kind, remote, remoteBranch, subject, author, date, upstream, current: kind === 'local' && name === head,
         protected: protectedBranch || ref === baseRef, occupied: occupied.has(ref), merged: merged.has(ref), ahead: 0, behind: 0 })
     }
-    if (divergence && baseRef) {
+    if (divergence && baseHash) {
       const compare = branches.filter(branch => branch.ref !== baseRef)
-      for (let i = 0; i < compare.length; i += 8) {
-        await Promise.all(compare.slice(i, i + 8).map(async branch => {
-          const count = await this.run(directory, ['rev-list', '--left-right', '--count', `${baseRef}...${branch.hash}`])
-          const [behind, ahead] = count.split(/\s+/).map(Number)
-          branch.behind = behind; branch.ahead = ahead
-        }))
+      let counts: string | null
+      try {
+        counts = await this.run(directory, ['for-each-ref', `--format=%(refname)%00%(objectname)%00%(ahead-behind:${baseHash})`, 'refs/heads/', 'refs/remotes/'])
+      } catch (error) {
+        // Git before 2.41 does not support the batched ahead-behind atom.
+        if (!/unknown field name.*ahead-behind/i.test((error as Error).message)) throw error
+        counts = null
       }
+      const batch = new Map((counts || '').split('\n').map(line => {
+        const [ref, hash, count] = line.split('\0')
+        return [`${ref}\0${hash}`, count] as const
+      }))
+      const pending = compare.filter(branch => {
+        const count = batch.get(`${branch.ref}\0${branch.hash}`)
+        if (!count) return true
+        const [ahead, behind] = count.split(/\s+/).map(Number)
+        branch.ahead = ahead; branch.behind = behind; branch.merged = ahead === 0
+        return false
+      })
+      // Fall back for older Git or refs changed during the batched read.
+      const byHash = new Map<string, Branch[]>()
+      for (const branch of pending) {
+        const group = byHash.get(branch.hash)
+        if (group) group.push(branch)
+        else byHash.set(branch.hash, [branch])
+      }
+      const groups = [...byHash.entries()]
+      for (let i = 0; i < groups.length; i += 8) await Promise.all(groups.slice(i, i + 8).map(async ([hash, items]) => {
+        const count = await this.run(directory, ['rev-list', '--left-right', '--count', `${baseHash}...${hash}`])
+        const [behind, ahead] = count.split(/\s+/).map(Number)
+        for (const branch of items) { branch.behind = behind; branch.ahead = ahead; branch.merged = ahead === 0 }
+      }))
     }
     // -z status entries can contain a second pathname for renames.
     const entries = status.split('\0'); let dirty = 0
@@ -72,7 +98,7 @@ export class GitService {
     return { current: head || '分离 HEAD', detached: !head, dirty, branches, baseRef, remotes }
   }
   async checkout(directory: string, ref: string) {
-    const detail = await this.inspect(directory)
+    const detail = await this.inspect(directory, undefined, false)
     const branch = detail.branches.find(item => item.ref === ref && item.kind === 'local')
     if (!branch) throw new Error('只能切换到现有本地分支')
     if (detail.dirty) throw new Error('存在未提交修改，请先在项目中提交或暂存后切换')
@@ -86,6 +112,7 @@ export class GitService {
     if (detail.baseRef !== request.baseRef) throw new Error('比较基准已不存在，请刷新后重试')
     for (const ref of [...new Set(request.refs)]) {
       try {
+        let message = '已删除'
         const branch = detail.branches.find(item => item.ref === ref)
         if (!branch) throw new Error('分支已不存在')
         if (!request.expected[ref] || request.expected[ref] !== branch.hash) throw new Error('分支提交已变化，请刷新并重新确认')
@@ -104,10 +131,19 @@ export class GitService {
           if (defaultRef === `refs/heads/${branch.remoteBranch}`) throw new Error('服务器默认分支不可删除')
           await this.run(directory, ['push', '--porcelain', `--force-with-lease=refs/heads/${branch.remoteBranch}:${branch.hash}`, '--', branch.remote, `:refs/heads/${branch.remoteBranch}`])
         } else {
-          // Let Git recheck current/worktree ownership and remove branch configuration.
-          await this.run(directory, ['branch', '-D', '--', branch.name])
+          const worktrees = await this.run(directory, ['worktree', 'list', '--porcelain'])
+          if (worktrees.split('\n').includes(`branch ${branch.ref}`)) throw new Error('该分支已被工作区占用，请刷新后重试')
+          // Compare and delete under Git's ref lock, including forced deletions.
+          // Do not dereference a concurrently replaced symbolic ref.
+          await this.run(directory, ['update-ref', '--no-deref', '-d', branch.ref, branch.hash])
+          try {
+            const recreated = await this.run(directory, ['for-each-ref', '--format=%(refname)', branch.ref])
+            if (!recreated) await this.run(directory, ['config', '--local', '--remove-section', `branch.${branch.name}`])
+          } catch (error) {
+            if (!/no such section/i.test((error as Error).message)) message = '已删除分支，但未能清理本地分支配置'
+          }
         }
-        results.push({ ref, success: true, message: '已删除' })
+        results.push({ ref, success: true, message })
       } catch (error) { results.push({ ref, success: false, message: (error as Error).message }) }
     }
     return results
