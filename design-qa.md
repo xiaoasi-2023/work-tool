@@ -1,5 +1,27 @@
 # Workbench UI Redesign
 
+## Interaction Revision: 2026-11-01
+
+- Replaced the tool card directory with full-row launch targets and removed empty project/activity columns.
+- Added a searchable command dialog with arrow-key selection, Enter activation, Escape dismissal, and Ctrl/Cmd+K access.
+- Added closable tool tabs. Vue KeepAlive retains editor history, selected views, text results, and time calculation state across tool navigation. Deactivated clocks stop their timers; returning refreshes the clock. Git project activation handles selection from the home page.
+- Added JSON single-pane focus, animated mode indicators, editor focus outlines, result feedback, keyboard view navigation, and Ctrl+Enter formatting.
+- Motion includes short page transitions, tab entrance/removal, filtered tool list movement, button press feedback, favorite state changes, mobile backdrop fade, time mode indicator movement, result appearance, and theme color transitions. Browsers with native view transitions use a snapshot crossfade; the in-app browser uses CSS theme transitions and a transform animation for sidebar resizing. Reduced-motion preference disables these transitions.
+- In-app checks exercised command search/keyboard activation/empty results/dismissal, preserved JSON structure mode and undo availability, preserved text output, pane focus/restore, active-tab close fallback, mobile navigation, and the time mode indicator's measured alignment at 390px. The 240ms indicator transition and matching tab dimensions were inspected through rendered DOM.
+- Standalone smoke coverage now includes command-based navigation, pane focus, and view/content retention. This script was not launched as a separate browser process.
+
+## Earlier Layout Revision: 2026-11-01
+
+- Before this revision, commit `ec8f894` was pushed to `origin/main` as the requested backup.
+- Product Design guided direct implementation approved by the user: a 220px text sidebar, collapsible desktop navigation, a mobile drawer, quieter tool cards, and consistent toolbars and work surfaces.
+- JSON uses segmented views and independently scrolling editors. Timestamp conversion and date calculations use aligned columns and responsive stacking. Settings have clearer labels and larger theme selectors.
+- Fixed the settings theme selector falling out of sync when the top bar changes the theme; other settings drafts remain intact.
+- Production build and both TypeScript checks passed. JSON tests: 4 passed. Timestamp tests: 6 passed.
+- In-app browser checks covered the default 1280x720 viewport, 390x844 mobile, and 900x640 short windows. Captures verified home, JSON, timestamp, settings, and Git empty state; checked pages had no horizontal document overflow.
+- Exercised JSON formatting with a large integer, line-number visibility, field key/value changes, and diff output; timestamp epoch and batch conversion; theme persistence after reload; settings draft isolation; desktop sidebar collapse and mobile navigation.
+- Native Electron Git repository operations were not rerun in this revision. The existing standalone smoke script was updated for the new navigation and palette but was not launched; browser checks used the existing in-app preview.
+- The following sections document the previous 2026-10-30 revision and its verification limits.
+
 ## Scope And Decision
 
 - Date: 2026-10-30.

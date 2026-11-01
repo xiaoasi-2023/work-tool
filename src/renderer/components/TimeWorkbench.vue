@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Temporal } from '@js-temporal/polyfill'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, ArrowRightLeft, Calculator, CalendarClock, Clock3, Copy, Download, Globe2, List, Pause, Play, RefreshCw, Trash2 } from 'lucide-vue-next'
@@ -22,7 +22,9 @@ const disambiguation = ref<Disambiguation>('reject')
 const tab = ref<'convert' | 'batch' | 'calculate'>('convert')
 const now = shallowRef(Temporal.Now.instant()), paused = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined, draftTimer: ReturnType<typeof setTimeout> | undefined
-onMounted(() => { timer = setInterval(() => { if (!paused.value) now.value = Temporal.Now.instant() }, 1000); window.addEventListener('pagehide', saveDraft) })
+onMounted(() => window.addEventListener('pagehide', saveDraft))
+onActivated(() => { if (!paused.value) now.value = Temporal.Now.instant(); clearInterval(timer); timer = setInterval(() => { if (!paused.value) now.value = Temporal.Now.instant() }, 1000) })
+onDeactivated(() => { clearInterval(timer); saveDraft() })
 onBeforeUnmount(() => { clearInterval(timer); clearTimeout(draftTimer); saveDraft(); window.removeEventListener('pagehide', saveDraft) })
 const timestamp = ref<string>(typeof draft.timestamp === 'string' ? draft.timestamp : '')
 const inputUnit = ref<InputUnit>('auto'), datetime = ref<string>(typeof draft.datetime === 'string' ? draft.datetime : '')
@@ -109,7 +111,7 @@ watch([timestamp, datetime, batchInput, startDate, endDate, calculateDate, histo
   <div class="time-workbench">
     <div class="time-heading"><h1><Clock3 :size="21" />时间戳工作台</h1><div class="time-zone-picker"><Globe2 :size="15" /><el-select v-model="zone" filterable aria-label="时区" placeholder="选择时区"><el-option v-for="value in zoneOptions" :key="value" :value="value" :label="value" /></el-select></div></div>
     <section class="time-live" aria-label="当前时间"><div class="time-live-main"><span class="time-caption">当前 Unix 时间戳</span><div><strong>{{ timestampValue(now, 'seconds').split('.')[0] }}</strong><button class="icon-button" title="复制当前秒时间戳" aria-label="复制当前秒时间戳" @click="copy(timestampValue(now, 'seconds').split('.')[0])"><Copy :size="15" /></button><button class="icon-button" :title="paused ? '继续时钟' : '暂停时钟'" :aria-label="paused ? '继续时钟' : '暂停时钟'" @click="paused = !paused; if (!paused) now = Temporal.Now.instant()"><component :is="paused ? Play : Pause" :size="15" /></button></div><span>{{ live.zoned }}<span class="metadata-dot">·</span>{{ live.weekday }}</span></div><div class="time-live-ms"><span class="time-caption">毫秒</span><div><code>{{ timestampValue(now, 'milliseconds').split('.')[0] }}</code><button class="icon-button" title="复制当前毫秒时间戳" aria-label="复制当前毫秒时间戳" @click="copy(timestampValue(now, 'milliseconds').split('.')[0])"><Copy :size="14" /></button></div></div></section>
-    <nav class="time-tabs" aria-label="时间工具"><button v-for="item in [{ id: 'convert' as const, name: '时间转换', icon: ArrowRightLeft }, { id: 'batch' as const, name: '批量转换', icon: List }, { id: 'calculate' as const, name: '日期计算', icon: Calculator }]" :key="item.id" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id"><component :is="item.icon" :size="15" />{{ item.name }}</button></nav>
+    <nav class="time-tabs" aria-label="时间工具"><span class="time-tab-indicator" :style="{ transform: `translateX(${tab === 'convert' ? 0 : tab === 'batch' ? 100 : 200}%)` }" /><button v-for="item in [{ id: 'convert' as const, name: '时间转换', icon: ArrowRightLeft }, { id: 'batch' as const, name: '批量转换', icon: List }, { id: 'calculate' as const, name: '日期计算', icon: Calculator }]" :key="item.id" :class="{ selected: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id"><component :is="item.icon" :size="15" />{{ item.name }}</button></nav>
     <div class="time-dst-options"><span>夏令时冲突</span><el-select v-model="disambiguation" aria-label="夏令时冲突处理"><el-option value="reject" label="报错提示" /><el-option value="earlier" label="选择较早时刻" /><el-option value="later" label="选择较晚时刻" /></el-select><span class="toolbar-spacer" /><span><span class="local-dot" />本地处理</span></div>
     <template v-if="tab === 'convert'">
       <div class="time-convert-grid">

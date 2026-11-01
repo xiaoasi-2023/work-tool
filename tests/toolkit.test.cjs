@@ -1,0 +1,77 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { convertText, inspectJwt, jwtStatus, generateValues, randomString, processText } = require('../dist-electron/shared/toolkit.js')
+const { executeRegex } = require('../dist-electron/shared/regex.js')
+const { jsonToYaml, yamlToJson } = require('../dist-electron/shared/yaml.js')
+const { md5, sha256, sha512 } = require('hash-wasm')
+const { validate, version } = require('uuid')
+
+test('codecs round-trip UTF-8, astral characters, reserved URLs and HTML', () => {
+  const text = '中文 😀 <>&" /?a=1+2%'
+  for (const codec of ['base64','base64url','url','unicode','html']) assert.equal(convertText(convertText(text, codec, false), codec, true), text)
+  assert.equal(convertText('\\u{1f600}', 'unicode', true), '😀')
+  assert.throws(() => convertText('%%%%', 'base64', true))
+  assert.throws(() => convertText('/w==', 'base64', true))
+  assert.throws(() => convertText('%zz', 'url', true))
+})
+test('JWT status uses exp and nbf boundaries without claiming signature verification', () => {
+  const enc = value => Buffer.from(JSON.stringify(value)).toString('base64url')
+  const jwt = `Bearer ${enc({ alg: 'HS256' })}.${enc({ exp: 200, nbf: 100 })}.c2ln`
+  const result = inspectJwt(jwt)
+  assert.equal(result.header.alg, 'HS256')
+  assert.equal(jwtStatus(result.payload, 99), '尚未生效')
+  assert.equal(jwtStatus(result.payload, 100), '有效期内')
+  assert.equal(jwtStatus(result.payload, 200), '已过期')
+  assert.equal(jwtStatus({}, 10), '未设置过期时间')
+  assert.throws(() => inspectJwt(`${enc({})}.${enc({ exp: '200' })}.`), /exp/)
+  assert.throws(() => inspectJwt('bad.token'))
+  assert.throws(() => inspectJwt(`${enc([])}.${enc({})}.`), /对象/)
+})
+test('secure generators create valid UUID versions and include selected character classes', () => {
+  for (const kind of ['v4','v7']) for (const item of generateValues(kind, 10, 20, []).split('\n')) { assert.ok(validate(item)); assert.equal(version(item), Number(kind[1])) }
+  const groups = ['abc','ABC','123','!?']
+  for (let i = 0; i < 20; i++) { const value = randomString(32, groups); assert.equal(value.length, 32); for (const group of groups) assert.ok([...value].some(char => group.includes(char))) }
+  assert.equal(randomString(1024, ['ab']).length, 1024)
+  assert.throws(() => generateValues('v4', 1001, 1, []))
+  assert.throws(() => randomString(3, groups))
+  assert.throws(() => randomString(8, []))
+})
+test('text actions retain order and handle empty lines and case rules', () => {
+  const options = { trim: true, ignoreEmpty: true, ignoreCase: true, sort: 'none', prefix: '[', suffix: ']' }
+  assert.equal(processText(' a\nA\n\nb ', 'dedupe', options), 'a\nb')
+  assert.equal(processText('a\nb', 'prefix', options), '[a]\n[b]')
+  assert.equal(processText('a\nb', 'number', options), '1. a\n2. b')
+  assert.equal(processText('a\nb', 'reverse', options), 'b\na')
+})
+test('regex captures groups and handles zero-length Unicode matches', () => {
+  const result = executeRegex('(?<year>\\d{4})-(\\d{2})', 'g', '2026-11 2025-10', '$2/$1')
+  assert.equal(result.matches.length, 2)
+  assert.equal(result.matches[0].named.year, '2026')
+  assert.equal(result.output, '11/2026 10/2025')
+  assert.deepEqual(executeRegex('(?:)', 'gu', '😀', '-').matches.map(item => item.index), [0, 2])
+  assert.equal(executeRegex('a', 'g', 'a'.repeat(1100), 'b').truncated, true)
+  assert.throws(() => executeRegex('[', 'g', '', ''))
+})
+test('YAML conversion preserves large integers and rejects unsupported or rounded values', () => {
+  const yaml = jsonToYaml('{"id":90071992547409931234,"value":0.1,"items":[true,null,"text"]}')
+  assert.match(yaml, /90071992547409931234/)
+  const json = yamlToJson(yaml)
+  assert.match(json, /90071992547409931234/)
+  assert.match(json, /0\.1/)
+  assert.throws(() => jsonToYaml('{"value":1.234567890123456789}'), /精度/)
+  assert.throws(() => yamlToJson('value: 1.234567890123456789'), /精度/)
+  assert.throws(() => yamlToJson('value: .1234567890123456789'), /精度/)
+  assert.equal(JSON.parse(yamlToJson('value: -.5')).value, -0.5)
+  assert.equal(JSON.parse(yamlToJson('value: 1.')).value, 1)
+  assert.throws(() => yamlToJson('a: 1\na: 2'))
+  assert.throws(() => yamlToJson('1: value'), /字符串键/)
+  assert.throws(() => yamlToJson('value: .inf'), /Infinity/)
+  assert.throws(() => yamlToJson('a: &a [*a]'), /循环/)
+  assert.equal(JSON.parse(yamlToJson('a: &a [1, 2]\nb: *a')).b[1], 2)
+})
+test('hash engines match standard UTF-8 and empty-string vectors', async () => {
+  assert.equal(await md5('abc'), '900150983cd24fb0d6963f7d28e17f72')
+  assert.equal(await sha256('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+  assert.equal(await sha512('abc'), require('node:crypto').createHash('sha512').update('abc').digest('hex'))
+  assert.equal(await sha256(new TextEncoder().encode('中文')), require('node:crypto').createHash('sha256').update('中文').digest('hex'))
+})

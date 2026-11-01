@@ -5,6 +5,7 @@ import { bracketMatching, HighlightStyle, foldGutter, foldKeymap, indentOnInput,
 import { tags } from '@lezer/highlight'
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { json } from '@codemirror/lang-json'
+import { yaml } from '@codemirror/lang-yaml'
 import { linter, lintKeymap } from '@codemirror/lint'
 import { parseJson } from '../shared/json'
 
@@ -16,15 +17,16 @@ const jsonHighlight = HighlightStyle.define([
   { tag: tags.null, color: 'var(--subtle)' },
   { tag: tags.punctuation, color: 'var(--muted)' }
 ])
-export function editorExtensions(label: string): Extension[] {
+export function editorExtensions(label: string, format: 'json' | 'yaml' = 'json'): Extension[] {
   return [
-    json(), history(), drawSelection(), highlightActiveLine(), highlightActiveLineGutter(),
+    format === 'yaml' ? yaml() : json(), history(), drawSelection(), highlightActiveLine(), highlightActiveLineGutter(),
     bracketMatching(), indentOnInput(), syntaxHighlighting(jsonHighlight), highlightSelectionMatches(),
-    search({ top: true }), placeholder('粘贴或导入 JSON…'),
+    search({ top: true }), placeholder(format === 'yaml' ? '粘贴或导入 YAML…' : '粘贴或导入 JSON…'),
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...foldKeymap, ...searchKeymap, ...lintKeymap]),
     EditorView.contentAttributes.of({ 'aria-label': label, role: 'textbox', 'aria-multiline': 'true', spellcheck: 'false' }),
     // Validate without converting large numeric values to JavaScript numbers.
     linter(view => {
+      if (format === 'yaml') return []
       const text = view.state.doc.toString()
       if (!text.trim()) return []
       try { parseJson(text); return [] }

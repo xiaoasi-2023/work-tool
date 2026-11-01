@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, RefreshCw, FolderGit2, GitBranch, Trash2, Search, ShieldCheck, CircleDot, GitMerge, ArrowRightLeft, Folder, CloudDownload } from 'lucide-vue-next'
 import { useApp } from '../store'
@@ -7,6 +7,7 @@ import { api } from '../api'
 import type { Branch, DeleteResult, Project, RepoDetail } from '../../shared/types'
 
 const app = useApp()
+let initialized = false
 const project = ref<Project | null>(null)
 const detail = ref<RepoDetail | null>(null)
 const busy = ref(false)
@@ -68,7 +69,8 @@ async function executeDelete() {
   } catch (e) { ElMessage.error(error(e)) } finally { deleting.value = false }
 }
 function clearSelection() { table.value?.clearSelection(); selected.value = [] }
-onMounted(async () => { await app.reload(); const initial = app.state?.projects.find(p => p.id === app.activeProjectId) || app.state?.projects[0]; if (initial) await open(initial) })
+onMounted(async () => { await app.reload(); const initial = app.state?.projects.find(p => p.id === app.activeProjectId) || app.state?.projects[0]; if (initial) await open(initial); initialized = true })
+onActivated(() => { if (initialized && app.activeProjectId && app.activeProjectId !== project.value?.id) pickProject(app.activeProjectId) })
 </script>
 
 <template>

@@ -8,21 +8,21 @@
   display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0;
 }
 [data-theme='dark'] .json-workbench { --json-string: #8bcca7; --json-number: #ceb0ee; --json-key: #9dbaff; --json-bool: #e5b27a; --json-remove: #452a2d; --json-add: #253e31; }
-.json-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-shrink: 0; }
-.json-heading h1 { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 650; }
+.json-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; margin-bottom: 22px; flex-shrink: 0; }
+.json-heading h1 { display: flex; align-items: center; gap: 10px; font-size: 25px; font-weight: 650; }
 .json-heading h1 svg { color: var(--accent); }
-.json-view-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); }
-.json-view-tabs button { display: flex; align-items: center; gap: 6px; height: 36px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 0 13px; font-size: 13px; }
-.json-view-tabs button.selected { color: var(--accent); border-bottom-color: var(--accent); }
+.json-view-tabs { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.json-view-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; height: 32px; min-width: 76px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); padding: 0 12px; font-size: 13px; }
+.json-view-tabs button.selected { color: var(--accent); border-color: var(--line); background: var(--surface); }
 .json-view-tabs button:hover { background: var(--hover); }
-.json-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 0; border-block: 1px solid var(--line); flex-shrink: 0; }
-.json-toolbar .el-button { height: 32px; padding: 6px 10px; font-size: 12px; }
-.json-toolbar .icon-button { width: 30px; height: 30px; flex: 0 0 30px; }
+.json-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 12px 0; border-block: 1px solid var(--line); flex-shrink: 0; }
+.json-toolbar .el-button { height: 34px; padding: 7px 13px; font-size: 13px; }
+.json-toolbar .icon-button { width: 32px; height: 32px; flex: 0 0 32px; }
 .json-toolbar .bordered { border-radius: 5px; }
 .json-toolbar-divider { height: 18px; border-left: 1px solid var(--line); margin: 0 4px; }
-.json-toolbar .json-convert { width: 90px; }
+.json-toolbar .json-convert { width: 100px; }
 .json-toolbar .el-select__wrapper { min-height: 30px; font-size: 12px; }
-.json-options { display: flex; align-items: center; flex-wrap: wrap; column-gap: 18px; row-gap: 0; min-height: 50px; padding: 6px 0; flex-shrink: 0; }
+.json-options { display: flex; align-items: center; flex-wrap: wrap; column-gap: 20px; row-gap: 0; min-height: 52px; padding: 8px 0; flex-shrink: 0; }
 .json-indent-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .json-indent-label .el-select { width: 90px; }
 .json-indent-label .el-select__wrapper { min-height: 30px; font-size: 12px; }
@@ -30,21 +30,21 @@
 .json-options .el-checkbox__label { font-size: 12px; padding-left: 6px; }
 .json-local-label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .json-failure { margin: 0 0 10px; flex-shrink: 0; max-height: 90px; overflow: auto; }
-.json-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; flex: 1; min-height: 0; min-width: 0; }
+.json-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; flex: 1; min-height: 0; min-width: 0; }
 .json-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
-.json-pane > header { display: flex; align-items: center; gap: 8px; height: 42px; flex-shrink: 0; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.json-pane > header { display: flex; align-items: center; gap: 8px; height: 46px; flex-shrink: 0; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 13px; }
 .json-pane > header strong { font-weight: 550; white-space: nowrap; }
 .json-pane > header .muted { font-size: 10px; white-space: nowrap; }
 .json-pane > header .icon-button { width: 26px; height: 28px; flex-shrink: 0; }
 .json-code-editor { flex: 1; min-height: 0; min-width: 0; overflow: hidden; font-size: 13px; }
-.json-workbench .cm-editor { font-size: 13px; }
+.json-workbench .cm-editor { font-size: 14px; }
 .json-workbench .cm-gutterElement { font-size: 11px; }
 .json-workbench .cm-search { padding: 7px; font-size: 12px; }
 .json-workbench .cm-textfield { max-width: 140px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 3px 5px; }
 .json-workbench .cm-button { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 3px; font-size: 11px; padding: 2px 6px; }
 .json-workbench .cm-panel label { font-size: 11px; white-space: nowrap; }
 .json-workbench .cm-placeholder { color: var(--subtle); }
-.json-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 28px; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.json-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .json-file-input { display: none; }
 .json-tree { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .json-tree-toolbar { display: flex; align-items: center; gap: 3px; padding: 4px 10px; border-bottom: 1px solid var(--line); font-size: 11px; flex-shrink: 0; }
@@ -95,8 +95,8 @@
   .json-pane > header .muted { display: none; }
 }
 @media (max-width: 600px) {
-  .json-heading { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-  .json-heading h1 { font-size: 18px; }
+  .json-heading { flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .json-heading h1 { font-size: 22px; }
   .json-view-tabs { margin-left: auto; }
   .json-view-tabs button { height: 32px; font-size: 12px; padding: 0 9px; }
   .json-toolbar { gap: 3px; padding-block: 7px; }

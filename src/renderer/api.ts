@@ -13,7 +13,7 @@ const preview: ToolboxApi = {
   state: async () => read(), addProject: native, removeProject: native, inspect: native, fetch: native, checkout: native, deleteBranches: native,
   saveSettings: async settings => { write({ ...read(), settings }) },
   favorite: async (id: ToolId) => { const state = read(); state.favorites = state.favorites.includes(id) ? state.favorites.filter(item => item !== id) : [...state.favorites, id]; write(state) },
-  visit: async (id: ToolId) => { const state = read(); state.recent = [id, ...state.recent.filter(item => item !== id)].slice(0, 4); write(state) },
+  visit: async (id: ToolId) => { const state = read(); state.recent = [id, ...state.recent.filter(item => item !== id)].slice(0, 10); write(state) },
   chooseGit: native, gitVersion: native, openData: native
 }
 export const api: ToolboxApi = window.toolbox || preview

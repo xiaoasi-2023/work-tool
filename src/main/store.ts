@@ -54,5 +54,5 @@ export class Store {
     return { projects: this.projects(), settings: this.settings(), favorites: this.get('favorites', []), recent: this.get('recent', []), history, dataPath: this.directory, version, desktop: true }
   }
   favorite(id: ToolId) { const items = this.get<ToolId[]>('favorites', []); this.set('favorites', items.includes(id) ? items.filter(item => item !== id) : [...items, id]) }
-  visit(id: ToolId) { this.set('recent', [id, ...this.get<ToolId[]>('recent', []).filter(item => item !== id)].slice(0, 4)) }
+  visit(id: ToolId) { this.set('recent', [id, ...this.get<ToolId[]>('recent', []).filter(item => item !== id)].slice(0, 10)) }
 }

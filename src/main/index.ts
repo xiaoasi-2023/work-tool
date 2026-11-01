@@ -3,6 +3,7 @@ import path from 'node:path'
 import { Store } from './store'
 import { GitService } from './git'
 import type { DeleteRequest, Settings, ToolId } from '../shared/types'
+import { toolIds } from '../shared/types'
 
 let window: BrowserWindow
 let store: Store
@@ -47,7 +48,7 @@ function register() {
     store.set('settings', { ...s, gitPath: s.gitPath.trim() || 'git', protectedBranches: [...new Set(['main', 'master', 'develop', ...s.protectedBranches.filter(Boolean)])] })
   })
   for (const action of ['favorite', 'visit'] as const) handle(action, (id: ToolId) => {
-    if (!['git', 'json', 'text', 'time'].includes(id)) throw new Error('未知工具')
+    if (!toolIds.includes(id)) throw new Error('未知工具')
     store[action](id)
   })
   handle('git:choose', async () => {

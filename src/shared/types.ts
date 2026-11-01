@@ -1,4 +1,5 @@
-export type ToolId = 'git' | 'json' | 'text' | 'time'
+export const toolIds = ['git', 'json', 'text', 'time', 'codec', 'compare', 'jwt', 'random', 'regex', 'hash'] as const
+export type ToolId = typeof toolIds[number]
 export interface Settings { gitPath: string; protectedBranches: string[]; theme: 'light' | 'dark' }
 export interface Project { id: string; name: string; path: string; addedAt: string }
 export interface Branch {
