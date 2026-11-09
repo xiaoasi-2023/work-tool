@@ -1,6 +1,7 @@
-import { GitBranch, Braces, ListFilter, Clock3, Binary, GitCompareArrows, KeyRound, Dices, Regex, Fingerprint } from 'lucide-vue-next'
+import { GitBranch, Braces, ListFilter, Clock3, Binary, GitCompareArrows, KeyRound, Dices, Regex, Fingerprint, KanbanSquare } from 'lucide-vue-next'
 import type { ToolId } from '../shared/types'
 export const tools = [
+  { id: 'management' as ToolId, name: '研发管理工作台', category: '管理工具', description: '需求、专项版本、周排期与实际投入。', icon: KanbanSquare, color: 'blue', tag: '研发管理' },
   { id: 'git' as ToolId, name: 'Git 项目管理', category: '开发工具', description: '项目集中管理，分支状态一目了然。', icon: GitBranch, color: 'green', tag: '本地项目' },
   { id: 'json' as ToolId, name: 'JSON 工作台', category: '开发工具', description: '格式化、结构编辑与 JSON 差异对比。', icon: Braces, color: 'blue', tag: '数据处理' },
   { id: 'text' as ToolId, name: '文本工作台', category: '文本工具', description: '去重、排序、行处理、大小写与文本统计。', icon: ListFilter, color: 'amber', tag: '文本处理' },

@@ -4,10 +4,13 @@ import { Store } from './store'
 import { GitService } from './git'
 import type { DeleteRequest, Settings, ToolId } from '../shared/types'
 import { toolIds } from '../shared/types'
+import { ManagementService } from './management'
+import fs from 'node:fs'
 
 let window: BrowserWindow
 let store: Store
 let git: GitService
+let management: ManagementService
 const running = new Set<string>()
 async function exclusive<T>(id: string, action: () => Promise<T>): Promise<T> {
   if (running.has(id)) throw new Error('该项目正在执行操作，请稍后再试')
@@ -19,6 +22,34 @@ function register() {
     return fn(...args)
   })
   handle('state', () => store.state(app.getVersion()))
+  handle('management:state', () => management.read())
+  handle('management:mutate', request => management.mutate(request))
+  handle('management:backup', async () => {
+    const state = management.read()
+    const result = await dialog.showSaveDialog(window, { title: '备份研发管理数据', defaultPath: `Workbench-研发管理-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (result.canceled || !result.filePath) return null
+    management.backup(state, 'export')
+    fs.writeFileSync(result.filePath, JSON.stringify(state, null, 2), 'utf8')
+    return result.filePath
+  })
+  handle('management:restore', async () => {
+    const before = management.read()
+    const result = await dialog.showOpenDialog(window, { title: '恢复研发管理备份', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (result.canceled) return null
+    if (fs.statSync(result.filePaths[0]).size > 30 * 1024 * 1024) throw new Error('备份文件不能超过30 MB')
+    const data = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8').replace(/^\uFEFF/, ''))
+    return management.restore(data, before.revision)
+  })
+  handle('management:backups', (page?: number) => management.listBackups(page))
+  handle('management:backup-create', () => management.createBackup())
+  handle('management:backup-download', async (id: string) => {
+    const state = management.readBackup(id)
+    const result = await dialog.showSaveDialog(window, { title: '下载研发管理备份', defaultPath: id, filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (result.canceled || !result.filePath) return null
+    fs.writeFileSync(result.filePath, JSON.stringify(state, null, 2), 'utf8')
+    return result.filePath
+  })
+  handle('management:backup-restore', (id: string, revision: number) => management.restoreBackup(id, revision))
   handle('project:add', async () => {
     const result = await dialog.showOpenDialog(window, { title: '选择 Git 项目文件夹', properties: ['openDirectory'] })
     if (result.canceled) return null
@@ -74,7 +105,7 @@ else {
   app.whenReady().then(async () => {
     // Keep smoke tests and development data separate from installed application data.
     store = new Store(process.env.WORKBENCH_DATA_DIR || app.getPath('userData'))
-    await store.init(); git = new GitService(() => store.settings()); createWindow(); register()
+    await store.init(); git = new GitService(() => store.settings()); management = new ManagementService(store); createWindow(); register()
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow() })
   }).catch(error => { dialog.showErrorBox('Workbench 启动失败', String(error)); app.quit() })
   app.on('window-all-closed', () => app.quit())

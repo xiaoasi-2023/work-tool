@@ -1,4 +1,14 @@
-export const toolIds = ['git', 'json', 'text', 'time', 'codec', 'compare', 'jwt', 'random', 'regex', 'hash'] as const
+import type { ManagementState, ManagementMutation } from './management'
+export interface ManagementBackupRecord {
+  id: string; createdAt: string; size: number; revision: number | null;
+  source: 'manual' | 'automatic' | 'history'; reason: string; valid: boolean; error: string;
+  counts: { projects: number; requirements: number; plans: number; efforts: number } | null;
+}
+export interface ManagementBackupPage {
+  storage: 'browser' | 'desktop'; dataFile: string; directory: string;
+  page: number; pageSize: number; total: number; records: ManagementBackupRecord[];
+}
+export const toolIds = ['git', 'json', 'text', 'time', 'codec', 'compare', 'jwt', 'random', 'regex', 'hash', 'management'] as const
 export type ToolId = typeof toolIds[number]
 export interface Settings { gitPath: string; protectedBranches: string[]; theme: 'light' | 'dark' }
 export interface Project { id: string; name: string; path: string; addedAt: string }
@@ -33,4 +43,12 @@ export interface ToolboxApi {
   chooseGit(): Promise<string | null>;
   gitVersion(): Promise<string>;
   openData(): Promise<void>;
+  managementState(): Promise<ManagementState>;
+  managementMutate(request: ManagementMutation): Promise<ManagementState>;
+  managementBackup(): Promise<string | null>;
+  managementRestore(): Promise<ManagementState | null>;
+  managementBackups(page?: number): Promise<ManagementBackupPage>;
+  managementCreateBackup(): Promise<ManagementBackupRecord>;
+  managementBackupDownload(id: string): Promise<string | null>;
+  managementBackupRestore(id: string, revision: number): Promise<ManagementState>;
 }

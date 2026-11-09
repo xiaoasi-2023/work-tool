@@ -1,20 +1,21 @@
 {
   "name": "workbench-toolbox",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.12.0"
   },
-  "description": "A local desktop toolbox with Git branch management",
+  "description": "A local desktop toolbox with development planning and Git management",
   "author": "Workbench",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.cjs",
-    "dev:web": "vite --host 127.0.0.1",
+    "dev:web": "vite --host 127.0.0.1 --port 5207",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --win nsis --x64",
-    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs tests/json.test.cjs tests/time.test.cjs tests/toolkit.test.cjs",
+    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs tests/json.test.cjs tests/time.test.cjs tests/toolkit.test.cjs tests/management.test.cjs tests/management-schedule.test.cjs tests/management-week-report.test.cjs tests/management-numbering.test.cjs tests/management-io.test.cjs tests/management-web.test.cjs",
+    "test:management": "tsc -p tsconfig.electron.json && node --test tests/management.test.cjs tests/management-schedule.test.cjs tests/management-week-report.test.cjs tests/management-numbering.test.cjs tests/management-io.test.cjs tests/management-web.test.cjs",
     "test:tools": "tsc -p tsconfig.electron.json && node --test tests/toolkit.test.cjs",
     "test:json": "tsc -p tsconfig.electron.json && node --test tests/json.test.cjs",
     "test:time": "tsc -p tsconfig.electron.json && node --test tests/time.test.cjs"
@@ -33,6 +34,7 @@
     "@lezer/highlight": "^1.2.5",
     "diff": "^9.0.0",
     "element-plus": "^2.11.5",
+    "exceljs": "^4.4.0",
     "hash-wasm": "^4.12.0",
     "he": "^2.0.0",
     "jwt-decode": "^4.0.0",

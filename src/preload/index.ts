@@ -14,6 +14,14 @@ const api: ToolboxApi = {
   visit: id => ipcRenderer.invoke('visit', id),
   chooseGit: () => ipcRenderer.invoke('git:choose'),
   gitVersion: () => ipcRenderer.invoke('git:version'),
-  openData: () => ipcRenderer.invoke('data:open')
+  openData: () => ipcRenderer.invoke('data:open'),
+  managementState: () => ipcRenderer.invoke('management:state'),
+  managementMutate: request => ipcRenderer.invoke('management:mutate', request),
+  managementBackup: () => ipcRenderer.invoke('management:backup'),
+  managementRestore: () => ipcRenderer.invoke('management:restore'),
+  managementBackups: page => ipcRenderer.invoke('management:backups', page),
+  managementCreateBackup: () => ipcRenderer.invoke('management:backup-create'),
+  managementBackupDownload: id => ipcRenderer.invoke('management:backup-download', id),
+  managementBackupRestore: (id, revision) => ipcRenderer.invoke('management:backup-restore', id, revision)
 }
 contextBridge.exposeInMainWorld('toolbox', api)
