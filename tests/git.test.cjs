@@ -6,6 +6,7 @@ const os = require('node:os')
 const { execFile } = require('node:child_process')
 const { promisify } = require('node:util')
 const { GitService } = require('../dist-electron/main/git.js')
+const { getPuttySshEnvironment, gitRemoteError, isSshRemote } = require('../dist-electron/main/git-ssh.js')
 const { Store } = require('../dist-electron/main/store.js')
 const execute = promisify(execFile)
 const settings = { gitPath: 'git', protectedBranches: ['main', 'master', 'develop', 'release/*'], theme: 'light' }
@@ -195,4 +196,146 @@ test('SQLite persists projects, favorites, settings and history across restarts'
   assert.equal(state.projects[0].id, p.id)
   assert.deepEqual(state.favorites, ['git']); assert.deepEqual(state.recent, ['json'])
   assert.equal(state.history[0].success, true); assert.equal(state.history[0].action, '\u5220\u9664')
+})
+
+async function puttyFixture(t) {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'workbench-ssh-'))
+  t.after(() => fs.rm(temp, { recursive: true, force: true }))
+  const clientDirectory = path.join(temp, 'program files', 'TortoiseGit', 'bin')
+  await fs.mkdir(clientDirectory, { recursive: true })
+  await fs.writeFile(path.join(clientDirectory, 'TortoiseGitPlink.exe'), '')
+  await fs.writeFile(path.join(clientDirectory, 'plink'), '')
+  const key = path.join(temp, "key with space and ' quote.ppk")
+  await fs.writeFile(key, 'test fixture, not a private key')
+  const environment = { ...process.env, ProgramW6432: path.join(temp, 'program files'), ProgramFiles: path.join(temp, 'program files'), PATH: clientDirectory, GIT_SSH: undefined, GIT_SSH_COMMAND: undefined, GIT_SSH_VARIANT: undefined }
+  return { temp, key, environment }
+}
+
+test('SSH transport detection excludes local paths and non-SSH protocols', () => {
+  for (const url of ['git@gitee.com:team/repo.git', 'gitee.com:repo.git', 'ssh://git@gitee.com:2222/repo.git', 'git@[::1]:repo.git']) assert.equal(isSshRemote(url), true, url)
+  for (const url of ['https://gitee.com/team/repo.git', 'git://example.test/repo', 'file:///tmp/repo', 'C:/repo', 'D:\\repo', '/tmp/repo', '../remote.git']) assert.equal(isSshRemote(url), false, url)
+})
+
+test('PuTTY identities are passed through a compatible client without reading or changing the key', async t => {
+  const { key, environment } = await puttyFixture(t)
+  const before = await fs.readFile(key)
+  const result = getPuttySshEnvironment(key, environment, 'win32')
+  assert.equal(result.GIT_SSH_VARIANT, 'plink')
+  assert.match(result.GIT_SSH_COMMAND, /TortoiseGitPlink\.exe' -batch -i '/)
+  assert.ok(result.GIT_SSH_COMMAND.endsWith("key with space and '\\'' quote.ppk'"))
+  assert.deepEqual(await fs.readFile(key), before)
+  assert.equal(environment.GIT_SSH_COMMAND, undefined)
+})
+
+test('missing PuTTY identities and missing compatible clients produce actionable errors', async t => {
+  const { temp, key } = await puttyFixture(t)
+  assert.throws(() => getPuttySshEnvironment(path.join(temp, 'missing.ppk'), {}, 'win32'), /密钥文件不存在/)
+  assert.throws(() => getPuttySshEnvironment(key, {}, 'win32'), /未找到.*Plink/)
+})
+
+test('fetch uses each SSH remote identity separately and never persists transport overrides', async t => {
+  const { repo } = await fixture(t)
+  const { temp, key, environment } = await puttyFixture(t)
+  await git(repo, 'remote', 'set-url', 'origin', 'git@example.invalid:one.git')
+  await git(repo, 'remote', 'add', 'other', 'git@example.invalid:two.git')
+  const secondKey = path.join(temp, 'second.ppk')
+  await fs.writeFile(secondKey, 'another test fixture')
+  await git(repo, 'config', 'remote.origin.puttykeyfile', key)
+  await git(repo, 'config', 'remote.other.puttykeyfile', secondKey)
+  const before = await fs.readFile(path.join(repo, '.git', 'config'))
+  const reading = new GitService(() => settings, { ...environment, PATH: `${environment.PATH}${path.delimiter}${process.env.PATH || ''}` })
+  const run = reading.run.bind(reading)
+  const calls = []
+  reading.run = async (cwd, args, overrides) => {
+    if (args[0] === 'fetch') { calls.push({ args, overrides }); return '' }
+    return run(cwd, args, overrides)
+  }
+  await reading.fetch(repo)
+  assert.deepEqual(calls.map(call => call.args), [['fetch', '--prune', '--', 'origin'], ['fetch', '--prune', '--', 'other']])
+  assert.equal(calls[0].overrides.GIT_SSH_VARIANT, 'plink')
+  assert.ok(calls[0].overrides.GIT_SSH_COMMAND.includes('key with space'))
+  assert.ok(calls[1].overrides.GIT_SSH_COMMAND.includes('second.ppk'))
+  assert.ok(!calls[1].overrides.GIT_SSH_COMMAND.includes('key with space'))
+  assert.deepEqual(await fs.readFile(path.join(repo, '.git', 'config')), before)
+})
+
+test('explicit SSH commands and clients retain priority over legacy PuTTY settings', async t => {
+  const { repo } = await fixture(t)
+  await git(repo, 'remote', 'set-url', 'origin', 'git@example.invalid:one.git')
+  await git(repo, 'config', 'remote.origin.puttykeyfile', path.join(repo, 'missing.ppk'))
+  for (const mode of ['command', 'client', 'config']) {
+    const environment = { ...process.env, GIT_SSH: undefined, GIT_SSH_COMMAND: undefined }
+    if (mode === 'command') environment.GIT_SSH_COMMAND = 'custom-ssh -i custom-key'
+    if (mode === 'client') environment.GIT_SSH = 'ssh'
+    if (mode === 'config') await git(repo, 'config', 'core.sshCommand', 'ssh -i custom-key')
+    const reading = new GitService(() => settings, environment)
+    const run = reading.run.bind(reading)
+    let invoked = false
+    reading.run = async (cwd, args, overrides) => {
+      if (args[0] === 'ls-remote') { invoked = true; assert.deepEqual(overrides, {}); return '' }
+      return run(cwd, args, overrides)
+    }
+    await reading.runRemote(repo, ['ls-remote', '--', 'origin'], 'origin')
+    assert.equal(invoked, true)
+  }
+})
+
+test('HTTPS remotes ignore PuTTY key settings and push connections use the push URL', async t => {
+  const { repo } = await fixture(t)
+  await git(repo, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git')
+  await git(repo, 'config', 'remote.origin.puttykeyfile', path.join(repo, 'missing.ppk'))
+  const reading = new GitService(() => settings, { ...process.env, GIT_SSH: undefined, GIT_SSH_COMMAND: undefined })
+  const run = reading.run.bind(reading)
+  reading.run = async (cwd, args, overrides) => {
+    if (args[0] === 'ls-remote' || args[0] === 'push') { assert.deepEqual(overrides, {}); return 'ok' }
+    return run(cwd, args, overrides)
+  }
+  assert.equal(await reading.runRemote(repo, ['ls-remote', '--', 'origin'], 'origin'), 'ok')
+  await git(repo, 'remote', 'set-url', 'origin', 'git@example.invalid:repo.git')
+  await git(repo, 'remote', 'set-url', '--push', 'origin', 'https://example.invalid/repo.git')
+  assert.equal(await reading.runRemote(repo, ['push', '--', 'origin', 'main'], 'origin'), 'ok')
+})
+
+test('fetch prunes stale tracking refs while preserving local branches and work files', async t => {
+  const { repo, remote } = await fixture(t)
+  await git(repo, 'branch', 'stale')
+  await git(repo, 'push', 'origin', 'stale')
+  await git(repo, 'config', 'remote.origin.puttykeyfile', path.join(repo, 'unused.ppk'))
+  await fs.writeFile(path.join(repo, 'local.txt'), 'uncommitted work')
+  const head = await git(repo, 'rev-parse', 'HEAD')
+  await git(remote, 'update-ref', '-d', 'refs/heads/stale')
+  await service.fetch(repo)
+  assert.equal(await git(repo, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin/stale'), '')
+  assert.equal(await git(repo, 'rev-parse', 'refs/heads/stale'), head)
+  assert.equal(await git(repo, 'rev-parse', 'HEAD'), head)
+  assert.equal(await fs.readFile(path.join(repo, 'local.txt'), 'utf8'), 'uncommitted work')
+})
+
+test('fetch honors skip flags and continues other remotes after authentication failure', async t => {
+  const { repo } = await fixture(t)
+  await git(repo, 'remote', 'add', 'other', 'https://example.invalid/other.git')
+  await git(repo, 'remote', 'add', 'skip-one', 'https://example.invalid/skipped.git')
+  await git(repo, 'remote', 'add', 'skip-two', 'https://example.invalid/skipped.git')
+  await git(repo, 'config', 'remote.skip-one.skipFetchAll', 'true')
+  await git(repo, 'config', 'remote.skip-two.skipDefaultUpdate', 'true')
+  const reading = new GitService(() => settings)
+  const run = reading.run.bind(reading)
+  const visited = []
+  reading.run = async (cwd, args, overrides) => {
+    if (args[0] === 'fetch') {
+      const remote = args.at(-1); visited.push(remote)
+      if (remote === 'origin') throw new Error('Permission denied (publickey).')
+      return ''
+    }
+    return run(cwd, args, overrides)
+  }
+  await assert.rejects(() => reading.fetch(repo), /origin.*SSH 密钥认证失败/)
+  assert.deepEqual(visited, ['origin', 'other'])
+})
+
+test('remote authentication errors explain host trust and private-key unlocking separately', () => {
+  assert.match(gitRemoteError('origin', 'Host key verification failed.'), /服务器指纹/)
+  assert.match(gitRemoteError('origin', 'Unable to use key file (wrong passphrase)'), /Pageant/)
+  assert.match(gitRemoteError('origin', 'Permission denied (publickey).'), /公钥已添加/)
+  assert.match(gitRemoteError('origin', 'connection timed out'), /connection timed out/)
 })

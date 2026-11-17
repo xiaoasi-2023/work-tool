@@ -2,15 +2,16 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs'
 import type { Branch, DeleteRequest, DeleteResult, RepoDetail, Settings } from '../shared/types'
+import { getPuttySshEnvironment, gitRemoteError, isPuttyClient, isSshRemote } from './git-ssh'
 
 const execute = promisify(execFile)
 export class GitService {
-  constructor(private settings: () => Settings) {}
-  async run(cwd: string, args: string[]) {
+  constructor(private settings: () => Settings, private environment: NodeJS.ProcessEnv = process.env) {}
+  async run(cwd: string, args: string[], environment: NodeJS.ProcessEnv = {}) {
     try {
       const result = await execute(this.settings().gitPath || 'git', args, {
         cwd, encoding: 'utf8', windowsHide: true, timeout: 90000, maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never', LC_ALL: 'C' }
+        env: { ...this.environment, ...environment, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never', LC_ALL: 'C' }
       })
       return result.stdout.trimEnd()
     } catch (error) {
@@ -19,6 +20,36 @@ export class GitService {
       if (e.killed) throw new Error('Git 操作超时，请检查网络和认证配置后刷新仓库状态')
       throw new Error((e.stderr || e.message).trim())
     }
+  }
+  private config(directory: string, key: string, type?: 'path' | 'bool') {
+    return this.run(directory, ['config', ...(type ? [`--${type}`] : []), '--default', type === 'bool' ? 'false' : '', '--get', key])
+  }
+  async runRemote(directory: string, args: string[], remote: string) {
+    try {
+      const url = await this.run(directory, ['remote', 'get-url', ...(args[0] === 'push' ? ['--push'] : []), '--', remote])
+      let environment: NodeJS.ProcessEnv = {}
+      if (isSshRemote(url) && !this.environment.GIT_SSH_COMMAND && (!this.environment.GIT_SSH || isPuttyClient(this.environment.GIT_SSH))) {
+        const command = await this.config(directory, 'core.sshCommand')
+        if (!command) {
+          const key = await this.config(directory, `remote.${remote}.puttykeyfile`, 'path')
+          if (key) environment = getPuttySshEnvironment(key, this.environment)
+        }
+      }
+      return await this.run(directory, args, environment)
+    } catch (error) { throw new Error(gitRemoteError(remote, (error as Error).message)) }
+  }
+  async fetch(directory: string) {
+    const remotes = (await this.run(directory, ['remote'])).split('\n').filter(Boolean)
+    if (!remotes.length) throw new Error('此项目尚未配置远程仓库')
+    const errors: string[] = []
+    // Each remote may use a different PuTTY identity, including on the same host.
+    for (const remote of remotes) {
+      try {
+        if (await this.config(directory, `remote.${remote}.skipFetchAll`, 'bool') === 'true' || await this.config(directory, `remote.${remote}.skipDefaultUpdate`, 'bool') === 'true') continue
+        await this.runRemote(directory, ['fetch', '--prune', '--', remote], remote)
+      } catch (error) { errors.push((error as Error).message) }
+    }
+    if (errors.length) throw new Error(errors.join('\n\n'))
   }
   async root(directory: string) {
     const root = await this.run(directory, ['rev-parse', '--show-toplevel'])
@@ -125,11 +156,11 @@ export class GitService {
         }
         if (branch.kind === 'remote') {
           if (!branch.remote || !branch.remoteBranch) throw new Error('无法识别远程仓库')
-          const remoteHead = await this.run(directory, ['ls-remote', '--symref', '--', branch.remote, 'HEAD'])
+          const remoteHead = await this.runRemote(directory, ['ls-remote', '--symref', '--', branch.remote, 'HEAD'], branch.remote)
           const defaultRef = remoteHead.split('\n').find(line => line.startsWith('ref: '))?.split('\t')[0].slice(5)
           if (!defaultRef) throw new Error('无法确认服务器默认分支，已阻止远程删除')
           if (defaultRef === `refs/heads/${branch.remoteBranch}`) throw new Error('服务器默认分支不可删除')
-          await this.run(directory, ['push', '--porcelain', `--force-with-lease=refs/heads/${branch.remoteBranch}:${branch.hash}`, '--', branch.remote, `:refs/heads/${branch.remoteBranch}`])
+          await this.runRemote(directory, ['push', '--porcelain', `--force-with-lease=refs/heads/${branch.remoteBranch}:${branch.hash}`, '--', branch.remote, `:refs/heads/${branch.remoteBranch}`], branch.remote)
         } else {
           const worktrees = await this.run(directory, ['worktree', 'list', '--porcelain'])
           if (worktrees.split('\n').includes(`branch ${branch.ref}`)) throw new Error('该分支已被工作区占用，请刷新后重试')

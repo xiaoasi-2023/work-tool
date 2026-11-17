@@ -49,7 +49,9 @@ async function remove(p: Project) {
 async function fetchRemote() {
   if (!project.value) return
   busy.value = true
-  try { await api.fetch(project.value.id); ElMessage.success('远程信息已更新，失效引用已清理') } catch (e) { ElMessage.error(error(e)) } finally { busy.value = false; await refresh(); await app.reload() }
+  try { await api.fetch(project.value.id); ElMessage.success('远程分支已更新，本地失效引用已清理') }
+  catch (e) { await ElMessageBox.alert(error(e), '更新远程分支失败', { type: 'error', confirmButtonText: '知道了', customClass: 'git-remote-error' }).catch(() => {}) }
+  finally { busy.value = false; await refresh(); await app.reload() }
 }
 async function checkout(b: Branch) {
   if (!project.value) return
@@ -77,7 +79,7 @@ onActivated(() => { if (initialized && app.activeProjectId && app.activeProjectI
   <div class="git-tool">
     <header class="git-heading">
       <div class="git-title"><GitBranch :size="20" /><h1>Git 工作台</h1><span class="heading-divider" /><span class="muted">{{ app.state?.projects.length || 0 }} 个项目</span></div>
-      <div class="button-row"><el-button v-if="project" :disabled="busy" title="刷新仓库" aria-label="刷新仓库" class="refresh-button" @click="refresh()"><RefreshCw :size="15" /></el-button><el-button v-if="project" :loading="busy" @click="fetchRemote"><CloudDownload :size="15" />同步远程</el-button><el-button type="primary" :loading="!project && busy" :disabled="busy" @click="add"><Plus :size="16" />添加项目</el-button></div>
+      <div class="button-row"><el-button v-if="project" :disabled="busy" title="刷新仓库" aria-label="刷新仓库" class="refresh-button" @click="refresh()"><RefreshCw :size="15" /></el-button><el-button v-if="project" :loading="busy" @click="fetchRemote"><CloudDownload :size="15" />更新远程分支</el-button><el-button type="primary" :loading="!project && busy" :disabled="busy" @click="add"><Plus :size="16" />添加项目</el-button></div>
     </header>
     <div :class="['git-workspace', { 'has-projects': app.state?.projects.length }]">
       <aside v-if="app.state?.projects.length" class="project-rail" aria-label="项目列表">
@@ -129,3 +131,9 @@ onActivated(() => { if (initialized && app.activeProjectId && app.activeProjectI
     <el-dialog v-model="resultVisible" title="删除结果" width="680px"><div class="result-summary">成功 {{ results.filter(r => r.success).length }} 项，失败 {{ results.filter(r => !r.success).length }} 项</div><div v-for="result in results" :key="result.ref" class="result-row"><el-tag :type="result.success ? 'success' : 'danger'">{{ result.success ? '成功' : '失败' }}</el-tag><div><strong>{{ result.ref.replace(/^refs\/(heads|remotes)\//, '') }}</strong><p>{{ result.message }}</p></div></div><template #footer><el-button type="primary" @click="resultVisible = false">完成</el-button></template></el-dialog>
   </div>
 </template>
+
+<style>
+.git-remote-error { width: 560px; max-width: calc(100vw - 32px); }
+.git-remote-error .el-message-box__message { max-height: 55vh; overflow-y: auto; }
+.git-remote-error .el-message-box__message p { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>

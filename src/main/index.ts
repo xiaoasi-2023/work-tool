@@ -59,8 +59,8 @@ function register() {
   handle('git:inspect', (id: string, base?: string) => exclusive(id, () => git.inspect(store.project(id).path, base)))
   handle('git:fetch', (id: string) => exclusive(id, async () => {
     const p = store.project(id)
-    try { await git.run(p.path, ['fetch', '--all', '--prune']); store.log(p.name, '刷新远程', '获取全部远程并清理失效引用', true) }
-    catch (e) { store.log(p.name, '刷新远程', (e as Error).message, false); throw e }
+    try { await git.fetch(p.path); store.log(p.name, '更新远程分支', '获取远程分支与提交，清理本地失效引用', true) }
+    catch (e) { store.log(p.name, '更新远程分支', (e as Error).message, false); throw e }
   }))
   handle('git:checkout', (id: string, ref: string) => exclusive(id, async () => {
     const p = store.project(id)
