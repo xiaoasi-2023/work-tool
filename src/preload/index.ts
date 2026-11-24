@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ToolboxApi } from '../shared/types'
 
 const api: ToolboxApi = {
+  websites: {
+    read: () => ipcRenderer.invoke('websites:read'),
+    mutate: request => ipcRenderer.invoke('websites:mutate', request),
+    open: id => ipcRenderer.invoke('websites:open', id)
+  },
   disk: {
     environment: () => ipcRenderer.invoke('disk:environment'), state: () => ipcRenderer.invoke('disk:state'),
     start: root => ipcRenderer.invoke('disk:start', root), cancel: () => ipcRenderer.invoke('disk:cancel'),

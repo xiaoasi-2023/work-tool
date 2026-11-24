@@ -1,6 +1,7 @@
 import type { AppState, ToolboxApi, ToolId } from '../shared/types'
 import { version } from '../../package.json'
 import { createManagementWebClient } from '../shared/management-web-client'
+import { createWebsitesWebClient } from '../shared/websites-web-client'
 
 declare global { interface Window { toolbox?: ToolboxApi } }
 const key = 'workbench-preview'
@@ -19,6 +20,7 @@ function downloadBackup(data: unknown, filename: string): string {
   return filename
 }
 const preview: ToolboxApi = {
+  websites: createWebsitesWebClient(window.fetch.bind(window)),
   disk: {
     environment: async () => ({ home: '', volumes: [] }), state: async () => ({ job: null, snapshots: [], operations: [], working: false }),
     start: native, cancel: native, snapshot: native, chooseFolder: native, prepare: native, execute: native, restore: native, reveal: native, uninstall: native

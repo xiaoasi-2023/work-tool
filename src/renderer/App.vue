@@ -21,6 +21,7 @@ const RegexTool = defineAsyncComponent(() => import('./components/RegexTool.vue'
 const HashTool = defineAsyncComponent(() => import('./components/HashTool.vue'))
 const ManagementWorkbench = defineAsyncComponent(() => import('./components/ManagementWorkbench.vue'))
 const DiskSpaceTool = defineAsyncComponent(() => import('./components/DiskSpaceTool.vue'))
+const WebsitesTool = defineAsyncComponent(() => import('./components/WebsitesTool.vue'))
 
 const app = useApp()
 const search = ref('')
@@ -34,7 +35,7 @@ const navigationViewport = window.matchMedia('(max-width: 900px)')
 function viewportChanged() { mobileNavigation.value = false }
 const commandOpen = ref(false)
 const openTabs = ref<ToolId[]>([])
-const toolComponents = { git: GitTool, json: JsonWorkbench, time: TimeWorkbench, text: DataTools, codec: CodecTool, compare: TextCompare, jwt: JwtTool, random: RandomTool, regex: RegexTool, hash: HashTool, management: ManagementWorkbench, disk: DiskSpaceTool }
+const toolComponents = { git: GitTool, json: JsonWorkbench, time: TimeWorkbench, text: DataTools, codec: CodecTool, compare: TextCompare, jwt: JwtTool, random: RandomTool, regex: RegexTool, hash: HashTool, management: ManagementWorkbench, disk: DiskSpaceTool, websites: WebsitesTool }
 const activeComponent = computed(() => activeTool.value ? toolComponents[activeTool.value.id] : null)
 const openedTools = computed(() => openTabs.value.map(id => tools.find(tool => tool.id === id)!))
 function closeTab(id: ToolId) {
@@ -121,7 +122,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keydown); navigati
     <div class="main-shell" :inert="mobileNavigation || undefined">
       <nav v-if="openTabs.length" class="workspace-tabs" aria-label="打开的工具"><button class="workspace-home" title="工具库" aria-label="工具库" :class="{ selected: isCatalog }" @click="catalog('home')"><LayoutGrid :size="17" /></button><TransitionGroup name="workspace-tab" tag="div" class="workspace-tab-list"><div v-for="tool in openedTools" :key="tool.id" :class="['workspace-tab', { selected: app.page === tool.id }]"><button class="workspace-tab-title" :aria-current="app.page === tool.id ? 'page' : undefined" @click="app.open(tool.id)"><component :is="tool.icon" :size="15" />{{ tool.name }}</button><button class="workspace-tab-close" :title="`关闭${tool.name}`" :aria-label="`关闭${tool.name}`" @click="closeTab(tool.id)"><X :size="13" /></button></div></TransitionGroup><button class="workspace-tab-add" title="打开工具" aria-label="打开工具" @click="commandOpen = true"><Plus :size="17" /></button></nav>
       <header class="topbar"><div class="breadcrumb"><button class="icon-button navigation-toggle" :title="collapsed ? '展开导航' : '收起导航'" aria-label="切换导航" aria-controls="workspace-navigation" @click="toggleNavigation"><Menu class="mobile-menu-icon" :size="19" /><component :is="collapsed ? PanelLeftOpen : PanelLeftClose" class="desktop-menu-icon" :size="18" /></button><span>工作空间</span><ChevronRight :size="14" /><strong>{{ pageName }}</strong></div><div class="topbar-right"><span class="runtime-indicator"><span class="local-dot" />{{ app.state?.desktop ? '桌面版' : '浏览器预览' }}</span><button class="icon-button" :title="app.state?.settings.theme === 'dark' ? '切换为浅色' : '切换为深色'" :aria-label="app.state?.settings.theme === 'dark' ? '切换为浅色' : '切换为深色'" :disabled="!app.state || switchingTheme" @click="toggleTheme"><component :is="app.state?.settings.theme === 'dark' ? Sun : Moon" :size="18" /></button><span class="topbar-divider" /><button class="icon-button" title="工作台设置" aria-label="工作台设置" @click="app.page = 'settings'"><Settings2 :size="18" /></button></div></header>
-      <main :class="{ 'git-page': app.page === 'git', 'management-page': app.page === 'management', 'disk-page': app.page === 'disk', 'editor-page': ['json', 'text'].includes(app.page), 'catalog-page': isCatalog, 'settings-page': app.page === 'settings' }">
+      <main :class="{ 'git-page': app.page === 'git', 'management-page': app.page === 'management', 'disk-page': app.page === 'disk', 'websites-page': app.page === 'websites', 'editor-page': ['json', 'text'].includes(app.page), 'catalog-page': isCatalog, 'settings-page': app.page === 'settings' }">
         <div v-if="error" class="error-box">{{ error }}<el-button @click="load">重试</el-button></div>
         <template v-else-if="isCatalog">
           <div class="page-heading catalog-heading"><div><div class="eyebrow">WORKBENCH / LIBRARY</div><h1>{{ pageName }}<span class="title-tag">{{ filtered.length }}</span></h1><p>开发与数据处理<span class="metadata-dot">/</span>Workbench</p></div><el-button v-if="app.state?.desktop" :loading="adding" @click="addProject"><Plus :size="16" />添加项目</el-button><button v-else class="catalog-launcher" @click="commandOpen = true"><Search :size="17" />快速打开<ArrowUpRight :size="16" /></button></div>

@@ -8,12 +8,15 @@ import { ManagementService } from './management'
 import fs from 'node:fs'
 import { DiskSpaceService, assertPlainDiskPath } from './disk-space'
 import { diskBytes, type DiskAction } from '../shared/disk'
+import { WebsitesService } from './websites'
+import type { WebsitesMutation } from '../shared/websites'
 
 let window: BrowserWindow
 let store: Store
 let git: GitService
 let management: ManagementService
 let disk: DiskSpaceService
+let websites: WebsitesService
 const running = new Set<string>()
 async function exclusive<T>(id: string, action: () => Promise<T>): Promise<T> {
   if (running.has(id)) throw new Error('该项目正在执行操作，请稍后再试')
@@ -25,6 +28,15 @@ function register() {
     return fn(...args)
   })
   handle('state', () => store.state(app.getVersion()))
+  handle('websites:read', () => websites.read())
+  handle('websites:mutate', (request: WebsitesMutation) => websites.mutate(request))
+  handle('websites:open', async (id: string) => {
+    const site = websites.read().items.find(site => site.id === id)
+    if (!site) throw new Error('网址不存在，请刷新后重试')
+    await shell.openExternal(site.url)
+    const current = websites.read()
+    return current.items.some(site => site.id === id) ? websites.mutate({ revision: current.revision, command: { type: 'visit', id } }) : current
+  })
   handle('disk:environment', () => disk.environment())
   handle('disk:state', () => disk.state())
   handle('disk:start', (root: string) => disk.start(root))
@@ -132,7 +144,7 @@ else {
   app.whenReady().then(async () => {
     // Keep smoke tests and development data separate from installed application data.
     store = new Store(process.env.WORKBENCH_DATA_DIR || app.getPath('userData'))
-    await store.init(); git = new GitService(() => store.settings()); management = new ManagementService(store); disk = new DiskSpaceService(store.directory); createWindow(); register()
+    await store.init(); git = new GitService(() => store.settings()); management = new ManagementService(store); disk = new DiskSpaceService(store.directory); websites = new WebsitesService(store); createWindow(); register()
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow() })
   }).catch(error => { dialog.showErrorBox('Workbench 启动失败', String(error)); app.quit() })
   app.on('window-all-closed', () => app.quit())

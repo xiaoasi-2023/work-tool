@@ -1,6 +1,7 @@
-import { GitBranch, Braces, ListFilter, Clock3, Binary, GitCompareArrows, KeyRound, Dices, Regex, Fingerprint, KanbanSquare, HardDrive } from 'lucide-vue-next'
+import { GitBranch, Braces, ListFilter, Clock3, Binary, GitCompareArrows, KeyRound, Dices, Regex, Fingerprint, KanbanSquare, HardDrive, Bookmark } from 'lucide-vue-next'
 import type { ToolId } from '../shared/types'
 export const tools = [
+  { id: 'websites' as ToolId, name: '常用网站', category: '管理工具', description: '分类收藏常用网址，快速查找、打开与批量整理。', icon: Bookmark, color: 'blue', tag: '网站导航' },
   { id: 'management' as ToolId, name: '研发管理工作台', category: '管理工具', description: '需求、专项版本、周排期与实际投入。', icon: KanbanSquare, color: 'blue', tag: '研发管理' },
   { id: 'disk' as ToolId, name: '磁盘空间助手', category: '管理工具', description: '分析软件占用、整理缓存与归档历史文件，追踪空间增长。', icon: HardDrive, color: 'green', tag: '空间整理' },
   { id: 'git' as ToolId, name: 'Git 项目管理', category: '开发工具', description: '项目集中管理，分支状态一目了然。', icon: GitBranch, color: 'green', tag: '本地项目' },
