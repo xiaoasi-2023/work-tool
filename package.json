@@ -1,6 +1,6 @@
 {
   "name": "workbench-toolbox",
-  "version": "0.2.1",
+  "version": "0.2.5",
   "private": true,
   "engines": {
     "node": ">=22.12.0"
@@ -14,7 +14,8 @@
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --win nsis --x64",
-    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs tests/json.test.cjs tests/time.test.cjs tests/toolkit.test.cjs tests/management.test.cjs tests/management-schedule.test.cjs tests/management-week-report.test.cjs tests/management-numbering.test.cjs tests/management-io.test.cjs tests/management-web.test.cjs",
+    "test": "tsc -p tsconfig.electron.json && node --test tests/git.test.cjs tests/json.test.cjs tests/time.test.cjs tests/toolkit.test.cjs tests/management.test.cjs tests/management-schedule.test.cjs tests/management-week-report.test.cjs tests/management-numbering.test.cjs tests/management-io.test.cjs tests/management-web.test.cjs tests/disk.test.cjs",
+    "test:disk": "tsc -p tsconfig.electron.json && node --test tests/disk.test.cjs",
     "test:management": "tsc -p tsconfig.electron.json && node --test tests/management.test.cjs tests/management-schedule.test.cjs tests/management-week-report.test.cjs tests/management-numbering.test.cjs tests/management-io.test.cjs tests/management-web.test.cjs",
     "test:tools": "tsc -p tsconfig.electron.json && node --test tests/toolkit.test.cjs",
     "test:json": "tsc -p tsconfig.electron.json && node --test tests/json.test.cjs",

@@ -6,11 +6,14 @@ import type { DeleteRequest, Settings, ToolId } from '../shared/types'
 import { toolIds } from '../shared/types'
 import { ManagementService } from './management'
 import fs from 'node:fs'
+import { DiskSpaceService, assertPlainDiskPath } from './disk-space'
+import { diskBytes, type DiskAction } from '../shared/disk'
 
 let window: BrowserWindow
 let store: Store
 let git: GitService
 let management: ManagementService
+let disk: DiskSpaceService
 const running = new Set<string>()
 async function exclusive<T>(id: string, action: () => Promise<T>): Promise<T> {
   if (running.has(id)) throw new Error('该项目正在执行操作，请稍后再试')
@@ -22,6 +25,33 @@ function register() {
     return fn(...args)
   })
   handle('state', () => store.state(app.getVersion()))
+  handle('disk:environment', () => disk.environment())
+  handle('disk:state', () => disk.state())
+  handle('disk:start', (root: string) => disk.start(root))
+  handle('disk:cancel', () => disk.cancel())
+  handle('disk:snapshot', (id: string) => disk.snapshot(id))
+  handle('disk:choose-folder', async (purpose: string) => {
+    if (!['scan', 'archive'].includes(purpose)) throw new Error('文件夹用途无效')
+    const result = await dialog.showOpenDialog(window, { title: purpose === 'scan' ? '选择扫描文件夹' : '选择归档位置（建议其他磁盘）', properties: ['openDirectory'] })
+    if (result.canceled) return null
+    if (purpose === 'archive') disk.allowArchiveDestination(result.filePaths[0])
+    return result.filePaths[0]
+  })
+  handle('disk:prepare', (snapshotId: string, ids: string[], action: DiskAction, destination: string) => disk.prepare(snapshotId, ids, action, destination))
+  handle('disk:execute', async (id: string) => {
+    // Preview contents are owned by the main process; the renderer supplies only its identifier.
+    const preview = disk.preview(id)
+    const result = await dialog.showMessageBox(window, { type: 'warning', title: preview.action === 'clean' ? '确认清理缓存' : '确认校验并归档', message: `${preview.action === 'clean' ? '清理' : '归档'} ${preview.items.length} 项，共 ${diskBytes(preview.bytes)}`, detail: `${preview.action === 'clean' ? '缓存会被删除，所属软件以后可能重新生成。' : `归档到 ${preview.destination}，校验成功后移出原位置。`}\n\n${preview.items.map(item => item.path).join('\n')}`, buttons: ['继续处理', '取消'], defaultId: 1, cancelId: 1, noLink: true })
+    return result.response === 0 ? disk.perform(id) : null
+  })
+  handle('disk:restore', async (id: string) => {
+    const record = disk.state().operations.find(record => record.id === id && record.action === 'archive')
+    if (!record) throw new Error('归档记录不存在')
+    const result = await dialog.showMessageBox(window, { type: 'question', title: '恢复归档文件', message: '将可恢复的文件复制回原位置？', detail: '先校验文件，再恢复；原位置已有文件时会跳过。归档副本保留。', buttons: ['恢复文件', '取消'], defaultId: 1, cancelId: 1, noLink: true })
+    return result.response === 0 ? disk.restore(id) : null
+  })
+  handle('disk:reveal', (target: string) => { assertPlainDiskPath(target); shell.showItemInFolder(target) })
+  handle('disk:uninstall', () => shell.openExternal('ms-settings:appsfeatures'))
   handle('management:state', () => management.read())
   handle('management:mutate', request => management.mutate(request))
   handle('management:backup', async () => {
@@ -102,7 +132,7 @@ else {
   app.whenReady().then(async () => {
     // Keep smoke tests and development data separate from installed application data.
     store = new Store(process.env.WORKBENCH_DATA_DIR || app.getPath('userData'))
-    await store.init(); git = new GitService(() => store.settings()); management = new ManagementService(store); createWindow(); register()
+    await store.init(); git = new GitService(() => store.settings()); management = new ManagementService(store); disk = new DiskSpaceService(store.directory); createWindow(); register()
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow() })
   }).catch(error => { dialog.showErrorBox('Workbench 启动失败', String(error)); app.quit() })
   app.on('window-all-closed', () => app.quit())

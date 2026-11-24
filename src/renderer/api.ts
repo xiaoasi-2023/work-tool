@@ -19,6 +19,10 @@ function downloadBackup(data: unknown, filename: string): string {
   return filename
 }
 const preview: ToolboxApi = {
+  disk: {
+    environment: async () => ({ home: '', volumes: [] }), state: async () => ({ job: null, snapshots: [], operations: [], working: false }),
+    start: native, cancel: native, snapshot: native, chooseFolder: native, prepare: native, execute: native, restore: native, reveal: native, uninstall: native
+  },
   state: async () => read(), addProject: native, removeProject: native, inspect: native, fetch: native, checkout: native, deleteBranches: native,
   saveSettings: async settings => { write({ ...read(), settings }) },
   favorite: async (id: ToolId) => { const state = read(); state.favorites = state.favorites.includes(id) ? state.favorites.filter(item => item !== id) : [...state.favorites, id]; write(state) },

@@ -1,0 +1,343 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { setTimeout: delay } = require('node:timers/promises')
+const { DiskSpaceService } = require('../dist-electron/main/disk-space.js')
+const { scanDisk } = require('../dist-electron/main/disk-scan.js')
+const { DISK_SELECTION_LIMIT, diskRule, diskChanges, diskSnapshotAfterOperations, importDiskSnapshot } = require('../dist-electron/shared/disk.js')
+
+async function fixture(t) {
+  const base = path.resolve('.runtime')
+  fs.mkdirSync(base, { recursive: true })
+  const temp = fs.mkdtempSync(path.join(base, 'disk-test-'))
+  const home = path.join(temp, 'home'), archive = path.join(temp, 'archive'), data = path.join(temp, 'data'), running = []
+  fs.mkdirSync(home); fs.mkdirSync(archive)
+  const service = new DiskSpaceService(data, { home, processes: async () => running })
+  t.after(async () => { await service.dispose(); assert.ok(temp.startsWith(base + path.sep)); fs.rmSync(temp, { recursive: true, force: true }) })
+  const write = (relative, content = 'fixture content') => { const file = path.join(home, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); return file }
+  const cache = write('AppData/Local/Sublime Text/Index/chunks/index.dat')
+  const backup = write('AppData/Roaming/Cursor/User/globalStorage/state.vscdb.backup.20260605_141410', 'historical conversation backup')
+  const database = write('AppData/Roaming/Cursor/User/globalStorage/state.vscdb', 'current database must survive')
+  const session = write('.codex/sessions/2026/11/rollout.jsonl', 'private conversation must survive')
+  service.allowArchiveDestination(archive)
+  return { service, home, temp, archive, data, running, write, cache, backup, database, session }
+}
+async function scan(service, home) {
+  await service.start(home)
+  const deadline = Date.now() + 15000
+  while (service.state().job.status === 'scanning') { if (Date.now() > deadline) throw new Error('scan timeout'); await delay(15) }
+  const job = service.state().job
+  assert.equal(job.status, 'complete', job.error)
+  return service.snapshot(job.snapshotId)
+}
+const find = (snapshot, rule) => snapshot.candidates.find(candidate => candidate.rule === rule)
+
+test('journal replacement retries brief Windows locks and saves a complete operation', { skip: process.platform !== 'win32' }, async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const journal = path.join(f.data, 'disk-space', 'operations.json'), originalRename = fs.renameSync
+  let blocked = 0
+  t.mock.method(fs, 'renameSync', (source, destination) => {
+    if (destination === journal && blocked < 2) { blocked++; throw Object.assign(new Error('temporary Windows lock'), { code: 'EPERM' }) }
+    return originalRename(source, destination)
+  })
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean')
+  const result = await f.service.perform(preview.id)
+  assert.equal(blocked, 2)
+  assert.equal(result.items[0].success, true, result.items[0].message)
+  assert.equal(JSON.parse(fs.readFileSync(journal, 'utf8'))[0].status, 'complete')
+  assert.equal(fs.readdirSync(path.dirname(journal)).some(name => name.endsWith('.tmp')), false)
+})
+
+test('a persistent journal lock preserves the previous log and prevents cleanup', { skip: process.platform !== 'win32' }, async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const journal = path.join(f.data, 'disk-space', 'operations.json'), originalRename = fs.renameSync
+  fs.writeFileSync(journal, '[]', 'utf8')
+  t.mock.method(fs, 'renameSync', (source, destination) => {
+    if (destination === journal) throw Object.assign(new Error('persistent Windows lock'), { code: 'EPERM' })
+    return originalRename(source, destination)
+  })
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean')
+  await assert.rejects(f.service.perform(preview.id), /persistent Windows lock/)
+  assert.equal(fs.readFileSync(journal, 'utf8'), '[]')
+  assert.ok(fs.existsSync(f.cache)); assert.ok(fs.existsSync(f.backup))
+  assert.equal(f.service.state().working, false)
+  assert.equal(fs.readdirSync(path.dirname(journal)).some(name => name.endsWith('.tmp')), false)
+})
+
+test('bulk selection can preview more than fifty candidates while rejecting invalid batches', async t => {
+  const f = await fixture(t)
+  for (let i = 0; i < 51; i++) f.write(`AppData/Local/JetBrains/WebStorm2026.${i}/index/data.dat`)
+  const snapshot = await scan(f.service, f.home), ids = snapshot.candidates.filter(candidate => candidate.action === 'clean' && !candidate.blocked).map(candidate => candidate.id)
+  assert.ok(ids.length > 50)
+  const preview = await f.service.prepare(snapshot.id, ids, 'clean')
+  assert.equal(preview.items.length, ids.length)
+  assert.equal(preview.bytes, snapshot.candidates.filter(candidate => ids.includes(candidate.id)).reduce((sum, candidate) => sum + candidate.bytes, 0))
+  assert.ok(fs.existsSync(f.cache))
+  await assert.rejects(f.service.prepare(snapshot.id, [ids[0], ids[0]], 'clean'), /不同条目/)
+  await assert.rejects(f.service.prepare(snapshot.id, Array.from({ length: DISK_SELECTION_LIMIT + 1 }, (_, i) => `invalid-${i}`), 'clean'), /不同条目/)
+})
+
+test('scan groups software, protects conversation data and produces matching directory totals', async t => {
+  const f = await fixture(t)
+  f.write('AppData/Local/uv/cache/archive-v0/dependency.py', 'shared dependency')
+  const snapshot = await scan(f.service, f.home)
+  assert.equal(snapshot.files, 5)
+  assert.equal(snapshot.bytes, snapshot.folders.find(folder => folder.path === f.home).bytes)
+  assert.ok(snapshot.apps.some(app => app.id === 'codex'))
+  assert.equal(find(snapshot, 'managed-dependency').action, null)
+  assert.equal(find(snapshot, 'sublime-index').action, 'clean')
+  assert.equal(find(snapshot, 'cursor-backup').action, 'archive')
+  assert.equal(snapshot.candidates.some(candidate => candidate.path === f.session || candidate.path === f.database), false)
+  assert.equal(diskRule(f.database, f.home, false), null)
+  assert.equal(diskRule(f.session, f.home, false), null)
+})
+
+test('cleaning uses owned preview data and removes only the selected cache', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean')
+  preview.items[0].path = f.database
+  const result = await f.service.perform(preview.id)
+  assert.equal(result.items[0].success, true, result.items[0].message)
+  assert.equal(result.status, 'complete'); assert.ok(result.finishedAt)
+  assert.equal(fs.existsSync(f.cache), false)
+  assert.equal(fs.readFileSync(f.database, 'utf8'), 'current database must survive')
+  assert.equal(fs.readFileSync(f.session, 'utf8'), 'private conversation must survive')
+  await assert.rejects(f.service.perform(preview.id), /过期/)
+})
+
+test('clean and archive can continue from one scan while handled candidates stay disabled across restarts', async t => {
+  const f = await fixture(t)
+  const otherCache = f.write('AppData/Local/JetBrains/WebStorm2026.3/index/data.dat', 'untouched index')
+  const snapshot = await scan(f.service, f.home), cache = find(snapshot, 'sublime-index'), backup = find(snapshot, 'cursor-backup'), other = find(snapshot, 'jetbrains-cache')
+  const cleanup = await f.service.prepare(snapshot.id, [cache.id], 'clean')
+  const cleaned = await f.service.perform(cleanup.id)
+  assert.equal(cleaned.items[0].success, true)
+  const afterClean = f.service.snapshot(snapshot.id)
+  assert.equal(afterClean.id, snapshot.id)
+  assert.equal(afterClean.candidates.find(candidate => candidate.id === cache.id).handled, 'clean')
+  assert.equal(afterClean.candidates.find(candidate => candidate.id === backup.id).blocked, '')
+  assert.equal(afterClean.candidates.find(candidate => candidate.id === other.id).blocked, '')
+  assert.equal(afterClean.bytes, snapshot.bytes)
+  assert.deepEqual(afterClean.folders, snapshot.folders)
+  await assert.rejects(f.service.prepare(snapshot.id, [cache.id], 'clean'))
+  const preview = await f.service.prepare(snapshot.id, [backup.id], 'archive', f.archive)
+  const archived = await f.service.perform(preview.id)
+  assert.equal(archived.items[0].success, true, archived.items[0].message)
+  const afterArchive = f.service.snapshot(snapshot.id)
+  assert.equal(afterArchive.candidates.find(candidate => candidate.id === backup.id).handled, 'archive')
+  assert.equal(afterArchive.candidates.find(candidate => candidate.id === other.id).blocked, '')
+  // Markers survive routine operation-history retention and a restart.
+  fs.writeFileSync(path.join(f.data, 'disk-space', 'operations.json'), '[]', 'utf8')
+  const reopened = new DiskSpaceService(f.data, { home: f.home, processes: async () => [] })
+  t.after(() => reopened.dispose())
+  const persisted = reopened.snapshot(snapshot.id)
+  assert.equal(persisted.candidates.find(candidate => candidate.id === cache.id).handled, 'clean')
+  assert.equal(persisted.candidates.find(candidate => candidate.id === backup.id).handled, 'archive')
+  assert.equal(persisted.candidates.find(candidate => candidate.id === other.id).blocked, '')
+  fs.appendFileSync(otherCache, ' changed')
+  await assert.rejects(reopened.prepare(snapshot.id, [other.id], 'clean'), /变化/)
+  const restored = await f.service.restore(archived.id)
+  assert.equal(restored.items[0].success, true)
+  assert.equal(find(f.service.snapshot(snapshot.id), 'cursor-backup').handled, 'restore')
+  await assert.rejects(f.service.prepare(snapshot.id, [backup.id], 'archive', f.archive), /已恢复/)
+  const fresh = await scan(f.service, f.home)
+  assert.equal(fresh.changedAt, undefined)
+  assert.equal(find(fresh, 'cursor-backup').blocked, '')
+  assert.equal(find(fresh, 'jetbrains-cache').blocked, '')
+})
+
+test('candidate updates ignore failed, unrelated, old, and imported operations without changing scan totals', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home), candidate = find(snapshot, 'sublime-index')
+  const at = new Date(Date.parse(snapshot.createdAt) + 1000).toISOString()
+  const operation = { id: 'projection', action: 'clean', createdAt: at, finishedAt: at, destination: '', items: [{ path: candidate.path, bytes: candidate.bytes, success: false, message: 'software running' }], freeBefore: null, freeAfter: null, sourceVolume: f.home, status: 'complete' }
+  assert.equal(diskSnapshotAfterOperations(snapshot, [operation]), snapshot)
+  assert.equal(diskSnapshotAfterOperations(snapshot, [{ ...operation, items: [{ ...operation.items[0], success: true, path: path.join(f.temp, 'unrelated') }] }]), snapshot)
+  assert.equal(diskSnapshotAfterOperations(snapshot, [{ ...operation, finishedAt: new Date(Date.parse(snapshot.createdAt) - 1000).toISOString(), items: [{ ...operation.items[0], success: true }] }]), snapshot)
+  const interrupted = diskSnapshotAfterOperations(snapshot, [{ ...operation, items: [{ ...operation.items[0], recoveryPath: path.join(f.temp, 'recovery') }] }])
+  assert.match(interrupted.candidates.find(row => row.id === candidate.id).blocked, /中断/)
+  assert.equal(find(snapshot, 'sublime-index').blocked, '')
+  const success = { ...operation, items: [{ ...operation.items[0], success: true }] }
+  const updated = diskSnapshotAfterOperations(snapshot, [success])
+  assert.equal(updated.bytes, snapshot.bytes)
+  assert.equal(updated.folders, snapshot.folders)
+  assert.equal(updated.changedAt, at)
+  const later = diskSnapshotAfterOperations(updated, [{ ...success, action: 'restore', finishedAt: new Date(Date.parse(at) + 1000).toISOString() }])
+  assert.equal(find(diskSnapshotAfterOperations(later, [success]), 'sublime-index').handled, 'restore')
+  const imported = importDiskSnapshot(snapshot)
+  assert.equal(diskSnapshotAfterOperations(imported, [success]), imported)
+})
+
+test('changed files are rejected both before preview and after preview', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const candidate = find(snapshot, 'sublime-index')
+  fs.appendFileSync(f.cache, ' changed')
+  await assert.rejects(f.service.prepare(snapshot.id, [candidate.id], 'clean'), /变化/)
+  const next = await scan(f.service, f.home)
+  const preview = await f.service.prepare(next.id, [find(next, 'sublime-index').id], 'clean')
+  fs.appendFileSync(f.cache, ' changed again')
+  const result = await f.service.perform(preview.id)
+  assert.equal(result.items[0].success, false)
+  assert.match(result.items[0].message, /变化/)
+  assert.ok(fs.readFileSync(f.cache, 'utf8').endsWith('changed again'))
+})
+
+test('running applications block cache cleanup and backup archival', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  f.running.push({ name: 'sublime_text.exe', path: '' })
+  await assert.rejects(f.service.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean'), /正在使用/)
+  f.running.splice(0, 1, { name: 'cursor.exe', path: '' })
+  await assert.rejects(f.service.prepare(snapshot.id, [find(snapshot, 'cursor-backup').id], 'archive', f.archive), /正在使用/)
+  assert.ok(fs.existsSync(f.cache)); assert.ok(fs.existsSync(f.backup))
+})
+
+test('backup archival verifies data, survives restart, and restores without deleting the archive', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'cursor-backup').id], 'archive', f.archive)
+  const result = await f.service.perform(preview.id), item = result.items[0]
+  assert.equal(item.success, true, item.message)
+  assert.equal(fs.existsSync(f.backup), false)
+  assert.equal(fs.readFileSync(item.archivedPath, 'utf8'), 'historical conversation backup')
+  assert.match(item.hash, /^[a-f0-9]{64}$/)
+  const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(item.archivedPath), 'manifest.json'), 'utf8'))
+  assert.equal(manifest.operation.items[0].path, f.backup)
+  assert.equal(manifest.operation.items[0].hash, item.hash)
+  const reopened = new DiskSpaceService(f.data, { home: f.home, processes: async () => [] })
+  t.after(() => reopened.dispose())
+  const restored = await reopened.restore(result.id)
+  assert.equal(restored.items[0].success, true, restored.items[0].message)
+  assert.equal(fs.readFileSync(f.backup, 'utf8'), 'historical conversation backup')
+  assert.ok(fs.existsSync(item.archivedPath))
+  assert.equal(fs.readFileSync(f.database, 'utf8'), 'current database must survive')
+})
+
+test('restore refuses to overwrite files and rejects tampered archive contents', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'cursor-backup').id], 'archive', f.archive)
+  const archived = await f.service.perform(preview.id)
+  fs.writeFileSync(f.backup, 'new original file')
+  const collision = await f.service.restore(archived.id)
+  assert.equal(collision.items[0].success, false); assert.match(collision.items[0].message, /已有文件/)
+  assert.equal(fs.readFileSync(f.backup, 'utf8'), 'new original file')
+  fs.unlinkSync(f.backup)
+  fs.writeFileSync(archived.items[0].archivedPath, 'tampered archive')
+  const tampered = await f.service.restore(archived.id)
+  assert.equal(tampered.items[0].success, false); assert.match(tampered.items[0].message, /校验/)
+  assert.equal(fs.existsSync(f.backup), false)
+})
+
+test('scanner skips junctions and never cleans a candidate containing a junction', async t => {
+  const f = await fixture(t)
+  const external = path.join(f.temp, 'outside')
+  fs.mkdirSync(external); fs.writeFileSync(path.join(external, 'precious.txt'), 'must survive')
+  fs.symlinkSync(external, path.join(path.dirname(f.cache), 'linked'), 'junction')
+  const snapshot = await scan(f.service, f.home), candidate = find(snapshot, 'sublime-index')
+  assert.equal(snapshot.skippedLinks, 1)
+  assert.match(candidate.blocked, /链接/)
+  await assert.rejects(f.service.prepare(snapshot.id, [candidate.id], 'clean'), /链接/)
+  assert.equal(fs.readFileSync(path.join(external, 'precious.txt'), 'utf8'), 'must survive')
+})
+
+test('replacing a cache with a junction after preview cannot delete its target', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const candidate = find(snapshot, 'sublime-index'), preview = await f.service.prepare(snapshot.id, [candidate.id], 'clean')
+  const external = path.join(f.temp, 'outside'), saved = path.join(f.temp, 'saved-index')
+  fs.mkdirSync(external); fs.writeFileSync(path.join(external, 'precious.txt'), 'must survive')
+  fs.renameSync(candidate.path, saved); fs.symlinkSync(external, candidate.path, 'junction')
+  const result = await f.service.perform(preview.id)
+  assert.equal(result.items[0].success, false); assert.match(result.items[0].message, /链接/)
+  assert.equal(fs.readFileSync(path.join(external, 'precious.txt'), 'utf8'), 'must survive')
+})
+
+test('archive destinations must be explicitly selected and cannot be cache locations', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const other = path.join(f.temp, 'not-selected'); fs.mkdirSync(other)
+  await assert.rejects(f.service.prepare(snapshot.id, [find(snapshot, 'cursor-backup').id], 'archive', other), /选择窗口/)
+  assert.throws(() => f.service.allowArchiveDestination(path.dirname(f.cache)), /独立的归档位置/)
+  assert.ok(fs.existsSync(f.backup))
+})
+
+test('recent updater downloads are kept and managed dependencies cannot be deleted', async t => {
+  const f = await fixture(t)
+  f.write('AppData/Local/example-updater/installer.exe')
+  f.write('AppData/Local/uv/cache/archive-v0/dependency.py')
+  const snapshot = await scan(f.service, f.home)
+  assert.match(find(snapshot, 'updater-download').blocked, /7 天/)
+  await assert.rejects(f.service.prepare(snapshot.id, [find(snapshot, 'managed-dependency').id], 'clean'), /不允许/)
+})
+
+test('growth compares only recorded common paths and labels incomplete coverage', async t => {
+  const f = await fixture(t), first = await scan(f.service, f.home)
+  fs.appendFileSync(f.cache, 'more bytes')
+  const second = await scan(f.service, f.home), changes = diskChanges(second, first)
+  assert.equal(changes.find(row => row.path === f.home).delta, 10)
+  const old = structuredClone(first); old.folders.push({ path: path.join(f.home, 'not-listed-next-time'), bytes: 12345, files: 1, partial: false })
+  assert.equal(diskChanges(second, old).some(row => row.delta === -12345), false)
+  assert.throws(() => diskChanges({ ...second, root: path.join(f.home, 'different') }, first), /相同扫描范围/)
+  assert.throws(() => diskChanges({ ...second, complete: false }, first), /完整结束/)
+})
+
+test('imported reports are read-only, normalize invalid sizes and retain useful software grouping', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const imported = importDiskSnapshot(snapshot)
+  assert.equal(imported.source, 'imported')
+  assert.equal(imported.ruleVersion, snapshot.ruleVersion)
+  assert.ok(imported.apps.some(app => app.id === 'codex'))
+  assert.ok(imported.candidates.every(candidate => candidate.blocked && !candidate.fingerprint))
+  const bounded = importDiskSnapshot({ ...snapshot, folders: snapshot.folders.slice(0, 1), ruleVersion: snapshot.ruleVersion + 1 })
+  assert.equal(bounded.apps.length, snapshot.apps.length)
+  assert.equal(bounded.candidates.length, snapshot.candidates.length)
+  assert.throws(() => diskChanges(bounded, imported), /相同规则/)
+  const invalid = importDiskSnapshot({ ...snapshot, folders: [{ path: f.home, bytes: -9, files: Infinity, partial: true }] })
+  assert.equal(invalid.folders[0].bytes, 0)
+  assert.throws(() => importDiskSnapshot({}), /报告/)
+})
+
+test('legacy imports infer the profile, include root files, and bound large directory lists', () => {
+  const home = 'C:/Users/Example', folder = { path: home, logical_bytes: 100, files: 1, errors: 0 }
+  const legacy = importDiskSnapshot({ root: 'C:/', disk: { total_bytes: 1000, free_bytes: 500 }, root_files: [{ path: 'C:/boot.dat', logical_bytes: 30 }], roots: [{ directories: [folder, ...Array.from({ length: 130000 }, (_, i) => ({ path: `${home}/dir-${i}`, logical_bytes: 0, files: 0 }))], summary: { logical_bytes: 100, files: 1 } }] })
+  assert.equal(legacy.home, home)
+  assert.equal(legacy.bytes, 130)
+  assert.equal(legacy.files, 2)
+  assert.equal(legacy.folders.find(folder => folder.path === 'C:/').bytes, 130)
+  assert.ok(legacy.folders.length <= 1000)
+})
+
+test('unrestored archives retain recovery records beyond the routine history limit', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const preview = await f.service.prepare(snapshot.id, [find(snapshot, 'cursor-backup').id], 'archive', f.archive)
+  const archived = await f.service.perform(preview.id)
+  const history = [...Array.from({ length: 101 }, (_, i) => ({ ...archived, id: `routine-${i}`, action: 'clean', items: [] })), archived]
+  fs.writeFileSync(path.join(f.data, 'disk-space', 'operations.json'), JSON.stringify(history), 'utf8')
+  const reopened = new DiskSpaceService(f.data, { home: f.home, processes: async () => [] })
+  t.after(() => reopened.dispose())
+  const cleanup = await reopened.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean')
+  await reopened.perform(cleanup.id)
+  const again = new DiskSpaceService(f.data, { home: f.home, processes: async () => [] })
+  t.after(() => again.dispose())
+  assert.ok(again.state().operations.some(operation => operation.id === archived.id))
+  const restored = await again.restore(archived.id)
+  assert.equal(restored.items[0].success, true, restored.items[0].message)
+})
+
+test('unavailable process inventory blocks changes and preserves source files', async t => {
+  const f = await fixture(t), snapshot = await scan(f.service, f.home)
+  const unavailable = new DiskSpaceService(f.data, { home: f.home, processes: async () => { throw new Error('process inventory unavailable') } })
+  t.after(() => unavailable.dispose())
+  await assert.rejects(unavailable.prepare(snapshot.id, [find(snapshot, 'sublime-index').id], 'clean'), /inventory unavailable/)
+  assert.equal(unavailable.state().working, false)
+  assert.ok(fs.existsSync(f.cache)); assert.ok(fs.existsSync(f.backup))
+})
+
+test('cancelled scans preserve partial results and are never eligible for mutations', async t => {
+  const f = await fixture(t)
+  const cancelled = scanDisk(f.home, f.home, () => true)
+  assert.equal(cancelled.complete, false)
+  await f.service.start(f.home); f.service.cancel()
+  while (f.service.state().job.status === 'scanning') await delay(15)
+  const job = f.service.state().job
+  assert.equal(job.status, 'cancelled')
+  const snapshot = f.service.snapshot(job.snapshotId)
+  assert.equal(snapshot.complete, false)
+  await assert.rejects(f.service.prepare(snapshot.id, ['invented'], 'clean'), /完成本机扫描/)
+})

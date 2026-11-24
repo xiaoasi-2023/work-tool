@@ -1,4 +1,5 @@
 import type { ManagementState, ManagementMutation } from './management'
+import type { DiskApi } from './disk'
 export interface ManagementBackupRecord {
   id: string; createdAt: string; size: number; revision: number | null;
   source: 'manual' | 'automatic' | 'history'; reason: string; valid: boolean; error: string;
@@ -8,7 +9,7 @@ export interface ManagementBackupPage {
   storage: 'browser' | 'desktop'; dataFile: string; directory: string;
   page: number; pageSize: number; total: number; records: ManagementBackupRecord[];
 }
-export const toolIds = ['git', 'json', 'text', 'time', 'codec', 'compare', 'jwt', 'random', 'regex', 'hash', 'management'] as const
+export const toolIds = ['git', 'json', 'text', 'time', 'codec', 'compare', 'jwt', 'random', 'regex', 'hash', 'management', 'disk'] as const
 export type ToolId = typeof toolIds[number]
 export interface Settings { gitPath: string; protectedBranches: string[]; theme: 'light' | 'dark' }
 export interface Project { id: string; name: string; path: string; addedAt: string }
@@ -30,6 +31,7 @@ export interface AppState {
 export interface DeleteRequest { projectId: string; refs: string[]; baseRef: string; force: boolean; expected: Record<string, string> }
 export interface DeleteResult { ref: string; success: boolean; message: string }
 export interface ToolboxApi {
+  disk: DiskApi;
   state(): Promise<AppState>;
   addProject(): Promise<Project | null>;
   removeProject(id: string): Promise<void>;
