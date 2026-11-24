@@ -6,7 +6,7 @@ import { api } from '../api'
 import { useApp } from '../store'
 import type { Settings } from '../../shared/types'
 const app = useApp()
-const settings = ref<Settings>({ gitPath: 'git', protectedBranches: ['main', 'master', 'develop', 'release/*'], theme: 'light' })
+const settings = ref<Settings>({ gitPath: 'git', protectedBranches: ['main', 'master', 'release/*'], theme: 'light' })
 const patterns = ref('')
 const version = ref('')
 const busy = ref(false)
@@ -44,7 +44,7 @@ async function openData() { try { await api.openData() } catch (e) { ElMessage.e
       <div class="settings-value"><div class="button-row"><el-input v-model="settings.gitPath" aria-label="Git 可执行文件路径" /><button class="icon-button bordered" title="选择 Git 可执行文件" @click="choose"><FolderOpen :size="17" /></button></div><div class="setting-secondary"><el-button size="small" :loading="testing" @click="check"><RefreshCw :size="13" />检查已保存的 Git 配置</el-button><code>{{ version }}</code></div></div>
     </section>
     <section class="settings-section">
-      <div class="settings-label"><h2>保护分支</h2><span>每行一个规则，支持 * 通配符</span><small>main、master、develop 始终保护</small></div>
+      <div class="settings-label"><h2>保护分支</h2><span>每行一个规则，支持 * 通配符</span><small>main、master 始终保护</small></div>
       <div class="settings-value"><el-input v-model="patterns" type="textarea" :rows="5" aria-label="保护分支规则" /></div>
     </section>
     <section class="settings-section">

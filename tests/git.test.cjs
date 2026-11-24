@@ -9,7 +9,7 @@ const { GitService } = require('../dist-electron/main/git.js')
 const { getPuttySshEnvironment, gitRemoteError, isSshRemote } = require('../dist-electron/main/git-ssh.js')
 const { Store } = require('../dist-electron/main/store.js')
 const execute = promisify(execFile)
-const settings = { gitPath: 'git', protectedBranches: ['main', 'master', 'develop', 'release/*'], theme: 'light' }
+const settings = { gitPath: 'git', protectedBranches: ['main', 'master', 'release/*'], theme: 'light' }
 const service = new GitService(() => settings)
 const git = async (cwd, ...args) => (await execute('git', args, { cwd, windowsHide: true })).stdout.trim()
 async function fixture(t) {
@@ -57,6 +57,23 @@ test('removes merged local and remote branches, preserves main', async t => {
   assert.equal(await git(remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/ai/merged'), '')
   assert.notEqual(await git(repo, 'rev-parse', 'refs/heads/main'), '')
   await assert.rejects(() => git(repo, 'config', '--get', 'branch.ai/merged.description'))
+})
+
+test('develop can be protected explicitly or deleted locally and remotely without that rule', async t => {
+  const { repo, remote } = await fixture(t)
+  await git(repo, 'branch', 'develop')
+  await git(repo, 'push', 'origin', 'develop')
+  const refs = ['refs/heads/develop', 'refs/remotes/origin/develop']
+  const protectedService = new GitService(() => ({ ...settings, protectedBranches: [...settings.protectedBranches, 'develop'] }))
+  const protectedDetail = await protectedService.inspect(repo)
+  assert.equal(protectedDetail.branches.filter(branch => refs.includes(branch.ref)).every(branch => branch.protected), true)
+  assert.deepEqual((await protectedService.delete(repo, await request(repo, refs, true))).map(result => result.success), [false, false])
+  const detail = await service.inspect(repo)
+  assert.equal(detail.branches.filter(branch => refs.includes(branch.ref)).every(branch => !branch.protected), true)
+  assert.deepEqual((await service.delete(repo, await request(repo, refs))).map(result => result.success), [true, true])
+  assert.equal(await git(repo, 'for-each-ref', '--format=%(refname)', 'refs/heads/develop', 'refs/remotes/origin/develop'), '')
+  assert.equal(await git(remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/develop'), '')
+  assert.notEqual(await git(repo, 'rev-parse', 'refs/heads/main'), '')
 })
 
 test('atomic local deletion preserves commits changed after the final hash check', async t => {
@@ -196,6 +213,21 @@ test('SQLite persists projects, favorites, settings and history across restarts'
   assert.equal(state.projects[0].id, p.id)
   assert.deepEqual(state.favorites, ['git']); assert.deepEqual(state.recent, ['json'])
   assert.equal(state.history[0].success, true); assert.equal(state.history[0].action, '\u5220\u9664')
+})
+
+test('settings omit develop by default and persist its removal without weakening main and master protection', async t => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'workbench-settings-'))
+  t.after(() => fs.rm(temp, { recursive: true, force: true }))
+  const store = new Store(temp)
+  await store.init()
+  assert.deepEqual(store.settings().protectedBranches, ['main', 'master', 'release/*'])
+  store.set('settings', { ...settings, protectedBranches: ['main', 'master', 'develop', 'release/*', 'version_hotfix'] })
+  store.saveSettings({ ...store.settings(), protectedBranches: ['release/*', 'version_hotfix'] })
+  const reopened = new Store(temp)
+  await reopened.init()
+  assert.deepEqual(reopened.settings().protectedBranches, ['main', 'master', 'release/*', 'version_hotfix'])
+  reopened.saveSettings({ ...reopened.settings(), protectedBranches: ['develop', 'develop', 'release/*'] })
+  assert.deepEqual(reopened.settings().protectedBranches, ['main', 'master', 'develop', 'release/*'])
 })
 
 async function puttyFixture(t) {

@@ -4,7 +4,7 @@ import { createManagementWebClient } from '../shared/management-web-client'
 
 declare global { interface Window { toolbox?: ToolboxApi } }
 const key = 'workbench-preview'
-const initial: AppState = { projects: [], favorites: [], recent: [], settings: { gitPath: 'git', protectedBranches: ['main', 'master', 'develop', 'release/*'], theme: 'light' }, history: [], dataPath: '', version, desktop: false }
+const initial: AppState = { projects: [], favorites: [], recent: [], settings: { gitPath: 'git', protectedBranches: ['main', 'master', 'release/*'], theme: 'light' }, history: [], dataPath: '', version, desktop: false }
 function read(): AppState {
   try { return { ...initial, ...JSON.parse(localStorage.getItem(key) || '{}'), version } } catch { return structuredClone(initial) }
 }

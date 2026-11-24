@@ -28,7 +28,11 @@ export class Store {
     this.db.run('INSERT OR REPLACE INTO kv VALUES (?, ?)', [key, JSON.stringify(value)])
     this.flush()
   }
-  settings(): Settings { return this.get('settings', { gitPath: 'git', protectedBranches: ['main', 'master', 'develop', 'release/*'], theme: 'light' }) }
+  settings(): Settings { return this.get('settings', { gitPath: 'git', protectedBranches: ['main', 'master', 'release/*'], theme: 'light' }) }
+  saveSettings(settings: Settings) {
+    if (!settings || !['light', 'dark'].includes(settings.theme) || typeof settings.gitPath !== 'string' || !Array.isArray(settings.protectedBranches) || !settings.protectedBranches.every(item => typeof item === 'string' && item.length <= 200)) throw new Error('设置格式无效')
+    this.set('settings', { ...settings, gitPath: settings.gitPath.trim() || 'git', protectedBranches: [...new Set(['main', 'master', ...settings.protectedBranches.filter(Boolean)])] })
+  }
   projects(): Project[] { return this.get('projects', []) }
   project(id: string): Project {
     const project = this.projects().find(item => item.id === id)

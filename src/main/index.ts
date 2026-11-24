@@ -74,10 +74,7 @@ function register() {
     for (const result of results) store.log(p.name, request.force ? '强制删除分支' : '删除分支', `${result.ref} · ${result.message}`, result.success)
     return results
   }))
-  handle('settings:save', (s: Settings) => {
-    if (!s || !['light', 'dark'].includes(s.theme) || typeof s.gitPath !== 'string' || !Array.isArray(s.protectedBranches) || !s.protectedBranches.every(item => typeof item === 'string' && item.length <= 200)) throw new Error('设置格式无效')
-    store.set('settings', { ...s, gitPath: s.gitPath.trim() || 'git', protectedBranches: [...new Set(['main', 'master', 'develop', ...s.protectedBranches.filter(Boolean)])] })
-  })
+  handle('settings:save', (s: Settings) => store.saveSettings(s))
   for (const action of ['favorite', 'visit'] as const) handle(action, (id: ToolId) => {
     if (!toolIds.includes(id)) throw new Error('未知工具')
     store[action](id)
