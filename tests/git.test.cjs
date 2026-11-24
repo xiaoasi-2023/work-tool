@@ -8,6 +8,7 @@ const { promisify } = require('node:util')
 const { GitService } = require('../dist-electron/main/git.js')
 const { getPuttySshEnvironment, gitRemoteError, isSshRemote } = require('../dist-electron/main/git-ssh.js')
 const { Store } = require('../dist-electron/main/store.js')
+const nativeFs = require('node:fs')
 const execute = promisify(execFile)
 const settings = { gitPath: 'git', protectedBranches: ['main', 'master', 'release/*'], theme: 'light' }
 const service = new GitService(() => settings)
@@ -228,6 +229,42 @@ test('settings omit develop by default and persist its removal without weakening
   assert.deepEqual(reopened.settings().protectedBranches, ['main', 'master', 'release/*', 'version_hotfix'])
   reopened.saveSettings({ ...reopened.settings(), protectedBranches: ['develop', 'develop', 'release/*'] })
   assert.deepEqual(reopened.settings().protectedBranches, ['main', 'master', 'develop', 'release/*'])
+})
+
+test('SQLite saving retries temporary Windows file locks and keeps binary data readable', { skip: process.platform !== 'win32' }, async t => {
+  const base = path.resolve('.runtime'); await fs.mkdir(base, { recursive: true })
+  const temp = await fs.mkdtemp(path.join(base, 'store-lock-'))
+  t.after(() => { assert.ok(temp.startsWith(base + path.sep)); return fs.rm(temp, { recursive: true, force: true }) })
+  const store = new Store(temp); await store.init()
+  const database = path.join(temp, 'workbench.sqlite'), originalRename = nativeFs.renameSync
+  let failures = 0
+  t.mock.method(nativeFs, 'renameSync', (source, destination) => {
+    if (destination === database && failures < 2) { failures++; throw Object.assign(new Error('temporary Windows lock'), { code: 'EPERM' }) }
+    return originalRename(source, destination)
+  })
+  store.set('storage-check', { name: '中文持久化', value: 16 })
+  const reopened = new Store(temp); await reopened.init()
+  assert.equal(failures, 2)
+  assert.deepEqual(reopened.get('storage-check', null), { name: '中文持久化', value: 16 })
+  assert.equal((await fs.readdir(temp)).some(file => file.endsWith('.tmp')), false)
+})
+
+test('permanent database file locks preserve the previous database and remove temporary writes', { skip: process.platform !== 'win32' }, async t => {
+  const base = path.resolve('.runtime'); await fs.mkdir(base, { recursive: true })
+  const temp = await fs.mkdtemp(path.join(base, 'store-lock-'))
+  t.after(() => { assert.ok(temp.startsWith(base + path.sep)); return fs.rm(temp, { recursive: true, force: true }) })
+  const store = new Store(temp); await store.init(); store.set('storage-check', 'saved')
+  const database = path.join(temp, 'workbench.sqlite'), previous = await fs.readFile(database), originalRename = nativeFs.renameSync
+  t.mock.method(nativeFs, 'renameSync', (source, destination) => {
+    if (destination === database) throw Object.assign(new Error('persistent Windows lock'), { code: 'EPERM' })
+    return originalRename(source, destination)
+  })
+  assert.throws(() => store.set('storage-check', 'unsaved'), /persistent Windows lock/)
+  assert.deepEqual(await fs.readFile(database), previous)
+  assert.equal((await fs.readdir(temp)).some(file => file.endsWith('.tmp')), false)
+  t.mock.restoreAll()
+  const reopened = new Store(temp); await reopened.init()
+  assert.equal(reopened.get('storage-check', null), 'saved')
 })
 
 async function puttyFixture(t) {

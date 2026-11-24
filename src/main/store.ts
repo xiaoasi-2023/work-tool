@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AppState, HistoryEntry, Project, Settings, ToolId } from '../shared/types'
+import { writeFileAtomic } from './atomic-file'
 
 export class Store {
   private db!: Database
@@ -16,9 +17,7 @@ export class Store {
     this.flush()
   }
   private flush() {
-    const temp = `${this.file}.tmp`
-    fs.writeFileSync(temp, this.db.export())
-    fs.renameSync(temp, this.file)
+    writeFileAtomic(this.file, this.db.export())
   }
   get<T>(key: string, fallback: T): T {
     const stmt = this.db.prepare('SELECT value FROM kv WHERE key = ?')
